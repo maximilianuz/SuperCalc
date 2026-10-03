@@ -141,6 +141,12 @@ test('a 360 px los textos de la barra inferior y los avisos entran completos', a
   const box = await page.locator('#toast-host .toast').boundingBox();
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(360);
+  const finish = await page.locator('#btn-finish').boundingBox();
+  const list = await page.locator('#list').boundingBox();
+  expect(finish.x + finish.width, '«Terminar compra» se sale del margen').toBeLessThanOrEqual(list.x + list.width + 0.5);
+  const card = await page.locator('#total-card').boundingBox();
+  const chip = await page.locator('#btn-limit').boundingBox();
+  expect(chip.x + chip.width).toBeLessThanOrEqual(card.x + card.width);
 });
 
 test('prefers-reduced-motion anula las animaciones de las hojas', async ({ page, context }) => {

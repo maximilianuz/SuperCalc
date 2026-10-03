@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { formatMoney, parseMoneyInput, centsToInput, formatPercent } from '../../www/js/money.js';
-import { sanitizeList, totals, findSame, limitState } from '../../www/js/list.js';
+import { sanitizeList, totals, findSame } from '../../www/js/list.js';
 import { checkDigitOk, normalizeCode } from '../../www/js/ean.js';
 
 test('formato de dinero «$ 1.299,50»', () => {
@@ -49,12 +49,15 @@ test('lista: totales, merge y límite', () => {
   assert.equal(findSame(l, { name: 'Yerba', cents: 4100 }), null);
   assert.equal(findSame(l, { name: 'Otro', code: '7790387000165', cents: 1000 })?.id, 'b');
   assert.equal(findSame(l, { name: '', cents: 1000 }), null, 'sin nombre ni código no se une');
-  assert.deepEqual(limitState(l), { limit: 8000, total: 9000, over: true, remaining: 0, excess: 1000 });
+  assert.equal(l.limit, 8000);
+  assert.equal(l.period, 'day', 'un límite guardado sin período queda diario');
+  assert.equal(sanitizeList({ limit: 100, period: 'month' }).period, 'month');
+  assert.equal(sanitizeList({ limit: 100, period: 'year' }).period, 'day');
 });
 
 test('lista: lectura defensiva', () => {
-  assert.deepEqual(sanitizeList(null), { items: [], limit: null });
-  assert.deepEqual(sanitizeList({ items: 'x', limit: -5 }), { items: [], limit: null });
+  assert.deepEqual(sanitizeList(null), { items: [], limit: null, period: 'day' });
+  assert.deepEqual(sanitizeList({ items: 'x', limit: -5 }), { items: [], limit: null, period: 'day' });
   const l = sanitizeList({ items: [{ id: 'a', cents: 1.5, qty: 1 }, { id: 'b', cents: 100, qty: 0 }, { id: 'c', cents: 100, qty: 1, code: 'zz' }] });
   assert.equal(l.items.length, 1);
   assert.equal(l.items[0].code, '');

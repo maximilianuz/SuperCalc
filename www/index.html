@@ -37,6 +37,7 @@
           <div class="limit-fill" id="limit-fill"></div>
           <div class="limit-mark" id="limit-mark"></div>
         </div>
+        <div class="limit-period" id="limit-period" hidden></div>
         <div class="total-meta" id="total-meta">Sin artículos</div>
       </section>
 
@@ -165,14 +166,19 @@
           </button>
         </header>
         <div class="sheet-scroll">
-          <p class="muted">Te avisamos cuando lo superes. La lista sigue sumando igual.</p>
           <div class="field">
-            <label class="field-label" for="f-limit">¿Cuánto querés gastar como máximo?</label>
+            <span class="field-label" id="limit-period-label">Período</span>
+            <div class="chips place-chips period-chips" id="limit-periods" role="radiogroup" aria-labelledby="limit-period-label"></div>
+            <p class="muted small-note" id="limit-hint"></p>
+          </div>
+          <div class="field">
+            <label class="field-label" for="f-limit" id="limit-question">¿Cuánto querés gastar como máximo por día?</label>
             <div class="price-input">
               <span aria-hidden="true">$</span>
               <input id="f-limit" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="0" />
             </div>
             <p class="field-error" id="limit-err" hidden>Ingresá un monto válido</p>
+            <p class="limit-preview" id="limit-preview" hidden aria-live="polite"></p>
           </div>
         </div>
         <div class="sheet-actions">

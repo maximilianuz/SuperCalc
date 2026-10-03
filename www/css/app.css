@@ -246,6 +246,7 @@ svg {
     'kicker kicker chip'
     'big big big'
     'bar bar bar'
+    'period period period'
     'label amount meta';
 }
 
@@ -382,6 +383,43 @@ svg {
 
 .total-card.over {
   background: color-mix(in srgb, var(--bad-soft) 70%, var(--surface));
+}
+
+/* Con semana o mes: lo sugerido para hoy y cómo va el período */
+.limit-period {
+  grid-area: period;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: -4px 0 12px;
+  font-size: 13.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.limit-period[hidden] {
+  display: none;
+}
+
+.limit-period .bad {
+  color: var(--bad);
+  font-weight: 500;
+}
+
+.chips.period-chips {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.period-chips .chip {
+  align-items: center;
+}
+
+.limit-preview {
+  margin: 10px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Lista ---------- */
@@ -1492,6 +1530,19 @@ dialog .toast-host {
   padding: 0 16px;
   font-size: 14px;
   border-radius: 999px;
+}
+
+/* A 360 px «En el carrito», «Vaciar» y «Terminar compra» no entran con el aire de pantallas más anchas */
+@media (max-width: 374px) {
+  .list-head {
+    gap: 6px;
+  }
+  .list-actions {
+    gap: 2px;
+  }
+  .list-actions .btn.small {
+    padding: 0 12px;
+  }
 }
 
 .close-card {

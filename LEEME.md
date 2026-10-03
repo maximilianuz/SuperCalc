@@ -38,9 +38,13 @@ Repetí los pasos 1, 2 y 4. Todos los APK se firman con la misma clave (`signing
 
 ## Qué hace
 - Lista con nombre opcional, precio y cantidad (− / +). Arriba, fijo: el total o, si pusiste un límite,
-  **cuánto te queda** en grande (el total gastado queda abajo).
+  **cuánto te queda hoy** en grande (el carrito queda abajo).
   Mismo nombre (o código) y mismo precio → suma cantidad. Quitar con «Deshacer». «Vaciar» con confirmación.
-- Límite de gasto con barra y marca; avisa (vibración + aviso) al pasarte y sigue sumando.
+- Límite de gasto **por día, por semana o por mes**, con barra y marca; avisa (vibración + aviso) al pasarte
+  y sigue sumando. Cuenta lo que ya guardaste en Gastos más el carrito: terminar una compra no lo reinicia.
+  Con semana (lunes a domingo) o mes, sugiere **cuánto gastar hoy** para llegar: lo que queda del período
+  repartido en los días que faltan (incluido hoy), sin contar lo de hoy para que la cifra no cambie mientras
+  comprás. Pasarte de lo sugerido avisa; pasarte del período también, y se marca en rojo.
 - **Escanear (escaneo continuo)**: la cámara queda abierta y arriba ves el total. Cuando lee un código de barras
   aparece una tarjeta: si ya lo compraste, con el último precio y **Añadir** (un toque); si es nuevo, **Leer precio**
   lee el cartel. El disparador lee el precio de un cartel sin código. **Escribir** pasa lo leído a la hoja de siempre.

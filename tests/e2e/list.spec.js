@@ -81,23 +81,26 @@ test('Vaciar con confirmación propia (sin confirm()) y Deshacer', async ({ page
   await expect(page.locator('.item')).toHaveCount(2);
 });
 
-test('límite de gasto: barra, «Te quedan», aviso al superarlo y sigue sumando', async ({ page, context }) => {
+test('límite diario: barra, «Te quedan hoy», aviso al superarlo y sigue sumando', async ({ page, context }) => {
   await openOffline(page, context);
   await page.click('#btn-limit');
+  await expect(page.locator('#limit-periods').getByRole('radio', { name: 'Día' })).toHaveAttribute('aria-checked', 'true');
   await page.fill('#f-limit', '5000');
   await page.click('#btn-limit-save');
   await expect(page.locator('#limit-box')).toBeVisible();
-  await expect(page.locator('#limit-text')).toHaveText('Te quedan $ 5.000,00');
+  await expect(page.locator('#limit-text')).toHaveText('Te quedan hoy $ 5.000,00');
+  await expect(page.locator('#btn-limit')).toHaveText('Por día $ 5.000');
+  await expect(page.locator('#limit-period')).toBeHidden();
 
   await addManual(page, { name: 'Aceite', price: '3000' });
-  await expect(page.locator('#limit-text')).toHaveText('Te quedan $ 2.000,00');
+  await expect(page.locator('#limit-text')).toHaveText('Te quedan hoy $ 2.000,00');
   expect(await page.evaluate(() => window.__vibrations.length)).toBe(0);
   await expect(page.locator('#total-card')).not.toHaveClass(/over/);
 
   await addManual(page, { name: 'Queso', price: '2500,50' });
-  await expect(page.locator('#limit-text')).toHaveText('Te pasaste por $ 500,50');
+  await expect(page.locator('#limit-text')).toHaveText('Hoy te pasaste por $ 500,50');
   await expect(page.locator('#total-card')).toHaveClass(/over/);
-  await expect(page.locator('#toast-host .toast.bad')).toContainText('te pasaste por $ 500,50');
+  await expect(page.locator('#toast-host .toast.bad')).toContainText('Superaste el límite de hoy: te pasaste por $ 500,50');
   expect(await page.evaluate(() => window.__vibrations.length)).toBe(1);
   const markLeft = await page.locator('#limit-mark').evaluate((e) => parseFloat(e.style.left));
   expect(markLeft).toBeGreaterThan(80);
@@ -106,15 +109,59 @@ test('límite de gasto: barra, «Te quedan», aviso al superarlo y sigue sumando
   // Sigue sumando y no vuelve a vibrar mientras siga pasado
   await addManual(page, { name: 'Pan', price: '1000' });
   await expect(page.locator('#total-amount')).toHaveText('$ 6.500,50');
-  await expect(page.locator('#limit-text')).toHaveText('Te pasaste por $ 1.500,50');
+  await expect(page.locator('#limit-text')).toHaveText('Hoy te pasaste por $ 1.500,50');
   expect(await page.evaluate(() => window.__vibrations.length)).toBe(1);
 
   await reloadSettled(page);
-  await expect(page.locator('#limit-text')).toHaveText('Te pasaste por $ 1.500,50');
+  await expect(page.locator('#limit-text')).toHaveText('Hoy te pasaste por $ 1.500,50');
+
+  // Terminar la compra no reinicia el día: lo guardado hoy sigue contando
+  await page.click('#btn-finish');
+  await page.click('#btn-finish-save');
+  await expect(page.locator('#total-amount')).toHaveText('$ 0,00');
+  await expect(page.locator('#limit-text')).toHaveText('Hoy te pasaste por $ 1.500,50');
+  await expect(page.locator('#limit-period')).toHaveText('Incluye $ 6.500,50 ya guardados hoy');
 
   await page.click('#btn-limit');
   await page.click('#btn-limit-remove');
   await expect(page.locator('#limit-box')).toBeHidden();
+});
+
+const at = (s) => new Date(`${s}-03:00`).getTime();
+const seedLedger = (purchases) =>
+  ({ v: 1, closes: [], purchases: purchases.map(([day, cents], i) => ({ id: `p${i}`, day, start: 0, end: 0, place: '', items: [{ name: 'x', code: '', cents, qty: 1 }] })) });
+
+test('límite mensual: sugiere cuánto gastar hoy según lo que ya se gastó en el mes', async ({ page, context }) => {
+  await page.clock.setFixedTime(at('2026-10-03T10:00:00'));
+  await page.addInitScript((l) => {
+    if (sessionStorage.getItem('s')) return;
+    localStorage.setItem('compras.gastos.v1', JSON.stringify(l));
+    sessionStorage.setItem('s', '1');
+  }, seedLedger([['2026-10-01', 6000000], ['2026-10-02', 4000000], ['2026-09-30', 9999900]]));
+  await openOffline(page, context);
+
+  await page.click('#btn-limit');
+  await page.locator('#limit-periods').getByRole('radio', { name: 'Mes' }).click();
+  await expect(page.locator('#limit-question')).toHaveText('¿Cuánto querés gastar como máximo por mes?');
+  await page.fill('#f-limit', '400000');
+  // Quedan 300.000 para 29 días (3 al 31)
+  await expect(page.locator('#limit-preview')).toHaveText('Hoy podés gastar hasta $ 10.344 (quedan 29 días)');
+  await page.click('#btn-limit-save');
+
+  await expect(page.locator('#btn-limit')).toHaveText('Por mes $ 400.000');
+  await expect(page.locator('#limit-text')).toHaveText('Te quedan hoy $ 10.344,00');
+  await expect(page.locator('#limit-period span')).toHaveText(['Sugerido para hoy $ 10.344 · quedan 29 días', 'Mes: $ 100.000 de $ 400.000']);
+
+  // Pasarse de lo sugerido avisa, pero el mes sigue en regla
+  await addManual(page, { name: 'Asado', price: '12000' });
+  await expect(page.locator('#limit-text')).toHaveText('Hoy te pasaste por $ 1.656,00');
+  await expect(page.locator('#toast-host .toast.bad')).toContainText('Pasaste lo sugerido para hoy por $ 1.656,00');
+  await expect(page.locator('#limit-period span').nth(1)).toHaveText('Mes: $ 112.000 de $ 400.000');
+
+  // Pasarse del mes
+  await addManual(page, { name: 'Tele', price: '300000' });
+  await expect(page.locator('#limit-period .bad')).toHaveText('Te pasaste del límite del mes por $ 12.000,00');
+  await expect(page.locator('#toast-host .toast.bad').last()).toContainText('Superaste el límite del mes: te pasaste por $ 12.000,00');
 });
 
 test('datos corruptos en localStorage no rompen la app', async ({ page, context }) => {

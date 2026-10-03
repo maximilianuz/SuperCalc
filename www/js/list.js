@@ -2,7 +2,7 @@
 import { normalizeName } from './history.js';
 
 export function emptyList() {
-  return { items: [], limit: null };
+  return { items: [], limit: null, period: 'day' };
 }
 
 let seq = 0;
@@ -43,6 +43,7 @@ export function sanitizeList(raw) {
     }
   }
   if (Number.isSafeInteger(raw.limit) && raw.limit > 0) list.limit = raw.limit;
+  if (raw.period === 'week' || raw.period === 'month') list.period = raw.period;
   return list;
 }
 
@@ -67,11 +68,4 @@ export function findSame(list, { name, code, cents }, exceptId = null) {
       return !!n && normalizeName(it.name) === n;
     }) || null
   );
-}
-
-export function limitState(list) {
-  const { cents } = totals(list);
-  if (!list.limit) return null;
-  const diff = list.limit - cents;
-  return { limit: list.limit, total: cents, over: diff < 0, remaining: Math.max(diff, 0), excess: Math.max(-diff, 0) };
 }

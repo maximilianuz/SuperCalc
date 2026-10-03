@@ -1,6 +1,7 @@
 import { formatMoney, parseMoneyInput, centsToInput, formatPercent } from './money.js';
 import { loadJSON, saveJSON } from './storage.js';
-import { emptyList, sanitizeList, totals, findSame, limitState, newId } from './list.js';
+import { emptyList, sanitizeList, totals, findSame, newId } from './list.js';
+import { budgetState, PERIODS, PERIOD_LABEL } from './budget.js';
 import { cameraSupported, startCamera, stopCamera, grabFrame, torchSupported, setTorch, cameraErrorText } from './camera.js';
 import {
   emptyLedger,
@@ -51,6 +52,7 @@ import {
 
 const LIST_KEY = 'compras.lista.v1';
 const HIST_KEY = 'compras.historial.v1';
+const LEDGER_KEY = 'compras.gastos.v1';
 
 const SHORT_RULE = {
   mayorista: 'mayorista',
@@ -72,7 +74,10 @@ const LONG_RULE = {
 // ---------- Estado ----------
 let list = loadJSON(LIST_KEY, sanitizeList, emptyList);
 let hist = loadJSON(HIST_KEY, sanitizeStore, emptyStore);
-let wasOver = !!limitState(list)?.over;
+let ledger = loadJSON(LEDGER_KEY, sanitizeLedger, emptyLedger);
+const budget = (now = Date.now()) => budgetState(list, ledger, totals(list).cents, now);
+let wasOver = overFlags(budget());
+let renderedDay = dayKey(Date.now());
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) =>
@@ -105,6 +110,7 @@ const el = {
   limitFill: $('#limit-fill'),
   limitMark: $('#limit-mark'),
   limitText: $('#limit-text'),
+  limitPeriod: $('#limit-period'),
   list: $('#list'),
   listHead: $('#list-head'),
   empty: $('#empty'),
@@ -281,26 +287,48 @@ function render() {
   el.amount.textContent = formatMoney(t.cents);
   el.meta.textContent = t.count ? `${plural(t.count, 'artículo', 'artículos')} · ${plural(t.units, 'unidad', 'unidades')}` : 'Sin artículos';
 
-  // Con límite, lo grande es cuánto queda (lo que importa en la góndola); el total pasa a segundo plano.
-  const ls = limitState(list);
-  el.limitBox.hidden = !ls;
-  el.limitText.hidden = !ls;
-  el.card.classList.toggle('has-limit', !!ls);
-  el.card.classList.toggle('over', !!ls?.over);
-  el.label.textContent = ls ? 'Gastado' : 'Total';
-  el.limitBtn.textContent = ls ? `Límite ${formatMoney(ls.limit).replace(/,00$/, '')}` : 'Poner límite';
-  if (ls) {
-    const scale = Math.max(ls.limit, ls.total) || 1;
-    el.limitFill.style.width = `${Math.min(100, (ls.total / scale) * 100)}%`;
-    el.limitMark.style.left = `${(ls.limit / scale) * 100}%`;
-    el.limitBox.classList.toggle('near', !ls.over && ls.total >= ls.limit * 0.9);
-    el.limitText.innerHTML = `<span class="lt-kicker">${ls.over ? 'Te pasaste por' : 'Te quedan'}</span> <span class="lt-amount">${esc(formatMoney(ls.over ? ls.excess : ls.remaining))}</span>`;
+  // Con límite, lo grande es cuánto queda hoy (lo que importa en la góndola); el carrito pasa a segundo plano.
+  const b = budget();
+  renderedDay = dayKey(Date.now());
+  el.limitBox.hidden = !b;
+  el.limitText.hidden = !b;
+  el.card.classList.toggle('has-limit', !!b);
+  el.card.classList.toggle('over', !!b?.over);
+  el.label.textContent = b ? 'Carrito' : 'Total';
+  el.limitBtn.textContent = b ? `${PERIOD_LABEL[b.period]} ${shortMoney(b.limit)}` : 'Poner límite';
+  el.limitPeriod.hidden = true;
+  if (b) {
+    const scale = Math.max(b.daily, b.spentToday) || 1;
+    el.limitFill.style.width = `${Math.min(100, (b.spentToday / scale) * 100)}%`;
+    el.limitMark.style.left = `${(b.daily / scale) * 100}%`;
+    el.limitBox.classList.toggle('near', !b.over && b.daily > 0 && b.spentToday >= b.daily * 0.9);
+    el.limitText.innerHTML = `<span class="lt-kicker">${b.over ? 'Hoy te pasaste por' : 'Te quedan hoy'}</span> <span class="lt-amount">${esc(formatMoney(b.over ? b.excess : b.remaining))}</span>`;
+    const lines = periodLines(b);
+    el.limitPeriod.hidden = !lines.length;
+    el.limitPeriod.innerHTML = lines.map((l) => `<span${l.bad ? ' class="bad"' : ''}>${esc(l.text)}</span>`).join('');
   }
   renderCamTotal();
 
   el.empty.hidden = list.items.length > 0;
   el.listHead.hidden = list.items.length === 0;
   el.list.innerHTML = list.items.map(itemHTML).join('');
+}
+
+const shortMoney = (c) => formatMoney(c).replace(/,00$/, '');
+const PERIOD_OF = { week: 'de la semana', month: 'del mes' };
+
+function periodLines(b) {
+  if (b.period === 'day') return b.savedToday ? [{ text: `Incluye ${formatMoney(b.savedToday)} ya guardados hoy` }] : [];
+  const noun = b.period === 'week' ? 'Semana' : 'Mes';
+  const left = b.daysLeft > 1 ? `quedan ${b.daysLeft} días` : 'último día';
+  const lines = [{ text: `Sugerido para hoy ${shortMoney(b.daily)} · ${left}` }];
+  if (b.periodOver) lines.push({ text: `Te pasaste del límite ${PERIOD_OF[b.period]} por ${formatMoney(b.periodSpent - b.limit)}`, bad: true });
+  else lines.push({ text: `${noun}: ${shortMoney(b.periodSpent)} de ${shortMoney(b.limit)}` });
+  return lines;
+}
+
+function overFlags(b) {
+  return { today: !!b?.over, period: !!b?.periodOver };
 }
 
 function trendTag(cmp) {
@@ -329,17 +357,19 @@ function itemHTML(it) {
 function commit() {
   saveList();
   render();
-  const ls = limitState(list);
-  const over = !!ls?.over;
-  if (over && !wasOver) alertOver(ls);
-  wasOver = over;
+  const b = budget();
+  const now = overFlags(b);
+  if (now.period && !wasOver.period) alertOver(`Superaste el límite ${b.period === 'day' ? 'de hoy' : PERIOD_OF[b.period]}: te pasaste por ${formatMoney(b.periodSpent - b.limit)}`);
+  else if (now.today && !wasOver.today && !now.period)
+    alertOver(b.period === 'day' ? `Superaste el límite de hoy: te pasaste por ${formatMoney(b.excess)}` : `Pasaste lo sugerido para hoy por ${formatMoney(b.excess)}`);
+  wasOver = now;
 }
 
-function alertOver(ls) {
+function alertOver(msg) {
   try {
     navigator.vibrate?.([120, 80, 120]);
   } catch {}
-  toast(`Superaste el límite: te pasaste por ${formatMoney(ls.excess)}`, { tone: 'bad', duration: 4500 });
+  toast(msg, { tone: 'bad', duration: 4500 });
 }
 
 el.list.addEventListener('click', (e) => {
@@ -402,12 +432,44 @@ const onScroll = () =>
 window.addEventListener('scroll', onScroll, { passive: true });
 
 // ---------- Límite ----------
+let limitDraftPeriod = 'day';
+const LIMIT_HINT = {
+  day: 'Cuenta todo lo que gastes hoy, también las compras ya guardadas. Te avisamos cuando lo superes.',
+  week: 'De lunes a domingo. Te sugerimos cuánto gastar por día para llegar, según lo que ya gastaste.',
+  month: 'Del 1 a fin de mes. Te sugerimos cuánto gastar por día para llegar, según lo que ya gastaste.',
+};
+const PERIOD_CHIP = { day: 'Día', week: 'Semana', month: 'Mes' };
+const LIMIT_QUESTION = { day: 'por día', week: 'por semana', month: 'por mes' };
+
+function renderLimitSheet() {
+  $('#limit-periods').innerHTML = PERIODS.map(
+    (p) => `<button type="button" class="chip" role="radio" aria-checked="${p === limitDraftPeriod}" data-period="${p}">${PERIOD_CHIP[p]}</button>`,
+  ).join('');
+  $('#limit-hint').textContent = LIMIT_HINT[limitDraftPeriod];
+  $('#limit-question').textContent = `¿Cuánto querés gastar como máximo ${LIMIT_QUESTION[limitDraftPeriod]}?`;
+  const cents = parseMoneyInput(el.limitInput.value);
+  const preview = $('#limit-preview');
+  const b = cents && limitDraftPeriod !== 'day' ? budgetState({ limit: cents, period: limitDraftPeriod }, ledger, totals(list).cents) : null;
+  preview.hidden = !b;
+  if (b) preview.textContent = `Hoy podés gastar hasta ${shortMoney(b.daily)} (${b.daysLeft > 1 ? `quedan ${b.daysLeft} días` : 'último día'})`;
+}
+
 $('#btn-limit').addEventListener('click', () => {
   el.limitInput.value = list.limit ? centsToInput(list.limit) : '';
+  limitDraftPeriod = list.period;
   el.limitErr.hidden = true;
   $('#btn-limit-remove').hidden = !list.limit;
+  renderLimitSheet();
   openDialog(el.sheetLimit);
 });
+
+$('#limit-periods').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-period]');
+  if (!b) return;
+  limitDraftPeriod = b.dataset.period;
+  renderLimitSheet();
+});
+el.limitInput.addEventListener('input', renderLimitSheet);
 
 $('#limit-form').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -417,6 +479,7 @@ $('#limit-form').addEventListener('submit', (e) => {
     return;
   }
   list.limit = cents;
+  list.period = limitDraftPeriod;
   el.sheetLimit.close();
   commit();
 });
@@ -1315,8 +1378,6 @@ function restoreHist(before, key) {
 }
 
 // ---------- Gastos: terminar compra, cambio de día, cierres mensuales e historial anual ----------
-const LEDGER_KEY = 'compras.gastos.v1';
-let ledger = loadJSON(LEDGER_KEY, sanitizeLedger, emptyLedger);
 let skipStale = false; // si la persona deshizo el guardado automático, no insistimos hasta reabrir
 const saveLedger = () => saveJSON(LEDGER_KEY, ledger);
 const WEEKDAYS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
@@ -1511,6 +1572,11 @@ function rollover() {
   if (r.closed.length) {
     ledger = r.ledger;
     saveLedger();
+  }
+  // Pasada la medianoche cambia lo que queda para hoy
+  if (dayKey(now) !== renderedDay) {
+    render();
+    wasOver = overFlags(budget());
   }
   renderCloseCard();
 }
@@ -1800,12 +1866,16 @@ function renderPurchase() {
     gv = { ...gv, mode: 'month', id: null };
     renderGastos();
     renderCloseCard();
+    render();
+    wasOver = overFlags(budget());
     toast(`Borraste la compra de ${formatMoney(p.total)}`, {
       action: 'Deshacer',
       onAction: () => {
         ledger = before;
         saveLedger();
         renderCloseCard();
+        render();
+        wasOver = overFlags(budget());
         if (sheetGastos.open) {
           gv = { ...gv, mode: 'purchase', id: p.id };
           renderGastos();
@@ -1863,7 +1933,7 @@ function reloadState() {
   list = loadJSON(LIST_KEY, sanitizeList, emptyList);
   hist = loadJSON(HIST_KEY, sanitizeStore, emptyStore);
   ledger = loadJSON(LEDGER_KEY, sanitizeLedger, emptyLedger);
-  wasOver = !!limitState(list)?.over;
+  wasOver = overFlags(budget());
   render();
   renderCloseCard();
   if (el.sheetHistory.open) renderHistory();

@@ -1,6 +1,6 @@
 // Service worker: precachea todo para que la app funcione sin internet.
 // Dentro del APK (Capacitor) no se registra.
-const VERSION = 'compras-v4';
+const VERSION = 'compras-v5';
 const ASSETS = [
   './',
   'index.html',
@@ -19,6 +19,7 @@ const ASSETS = [
   'js/barcode.js',
   'js/camera.js',
   'js/ledger.js',
+  'js/budget.js',
   'ocr/tesseract.min.js',
   'ocr/worker.min.js',
   'ocr/tesseract-core-simd-lstm.wasm.js',

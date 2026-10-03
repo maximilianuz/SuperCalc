@@ -63,3 +63,14 @@ jobs:
           name: Compras-apk-${{ github.run_number }}
           path: out/*.apk
           retention-days: 30
+
+      - name: Crear Release con APK
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Compras APK #${{ github.run_number }}
+          files: out/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

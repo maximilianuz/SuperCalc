@@ -123,3 +123,31 @@ test('lectura defensiva del registro de gastos', () => {
   assert.equal(L.purchases[0].total, 200, 'el total se recalcula');
   assert.equal(L.closes.length, 1);
 });
+
+test('lugar con nombre libre, autocompletado y tipo recordado', async () => {
+  const { setPlaceName, knownPlaces, placeTypeFor } = await import('../../www/js/ledger.js');
+  let L = archiveItems(emptyLedger(), [item('a', 100, 1, at([9, 1]))], { place: 'super', placeName: '  Coto   Palermo ', now: at([9, 1]) }).ledger;
+  assert.equal(L.purchases[0].placeName, 'Coto Palermo');
+  L = archiveItems(L, [item('b', 100, 1, at([9, 5]))], { place: 'kiosco', placeName: 'Kiosco Juan', now: at([9, 5]) }).ledger;
+  L = archiveItems(L, [item('c', 100, 1, at([9, 9]))], { place: 'super', placeName: 'coto palermo', now: at([9, 9]) }).ledger;
+  assert.deepEqual(knownPlaces(L).map((p) => [p.name, p.place, p.count]), [['coto palermo', 'super', 2], ['Kiosco Juan', 'kiosco', 1]]);
+  assert.equal(placeTypeFor(L, 'COTO PALERMO'), 'super');
+  assert.equal(placeTypeFor(L, 'desconocido'), '');
+  const id = L.purchases.find((p) => p.placeName === 'Kiosco Juan').id;
+  assert.equal(setPlaceName(L, id, 'Kiosco de Juan').purchases.find((p) => p.id === id).placeName, 'Kiosco de Juan');
+  assert.equal(setPlaceName(L, id, 'x'.repeat(100)).purchases.find((p) => p.id === id).placeName.length, 60);
+});
+
+test('CSV del mes: una fila por compra, montos con punto, comillas y acentos', async () => {
+  const { monthCSV } = await import('../../www/js/ledger.js');
+  let L = archiveItems(emptyLedger(), [item('Yerba "Playadito"', 425000, 1, at([9, 6], 10, 5)), item('Leche', 110000, 2, at([9, 6], 10, 20))], { place: 'super', placeName: 'Coto, Palermo', now: at([9, 6]) }).ledger;
+  L = archiveItems(L, [item('Alfajor', 90050, 1, at([9, 2], 18, 0))], { place: 'kiosco', now: at([9, 2]) }).ledger;
+  L = archiveItems(L, [item('Otro mes', 1, 1, at([10, 1]))], { now: at([10, 1]) }).ledger;
+  const csv = monthCSV(L, '2026-09');
+  assert.ok(csv.startsWith('﻿'));
+  const lines = csv.slice(1).trimEnd().split('\r\n');
+  assert.equal(lines.length, 3);
+  assert.equal(lines[0], 'Fecha,Hora,Lugar,Tipo de gasto,Monto,Moneda,Artículos,Detalle');
+  assert.equal(lines[1], '2026-09-02,18:00,,Kiosco,900.50,ARS,1,Alfajor x1');
+  assert.equal(lines[2], '2026-09-06,10:05,"Coto, Palermo",Supermercado,6450.00,ARS,3,"Yerba ""Playadito"" x1; Leche x2"');
+});

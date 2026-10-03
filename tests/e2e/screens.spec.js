@@ -192,6 +192,7 @@ for (const scheme of ['light', 'dark']) {
     const shot = (name) => page.screenshot({ path: `docs/capturas/${scheme}-${name}.png` });
     await shot('11-cierre-mes');
     await page.click('#btn-finish');
+    await page.fill('#finish-place-name', 'Coto Palermo');
     await page.locator('#finish-places').getByRole('radio', { name: 'Supermercado' }).click();
     await shot('12-terminar-compra');
     await page.locator('#sheet-finish [data-close]').click();

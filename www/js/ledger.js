@@ -65,6 +65,7 @@ export function sanitizeLedger(raw) {
         start: Number.isFinite(p.start) ? p.start : 0,
         end: Number.isFinite(p.end) ? p.end : 0,
         place: PLACE_LABEL[p.place] ? p.place : '',
+        placeName: cleanPlaceName(p.placeName),
         items,
         total: items.reduce((s, it) => s + it.cents * it.qty, 0),
         auto: !!p.auto,
@@ -85,6 +86,10 @@ export function sanitizeLedger(raw) {
   }
   sortPurchases(out.purchases);
   return out;
+}
+
+export function cleanPlaceName(name) {
+  return typeof name === 'string' ? name.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
 }
 
 function sortPurchases(ps) {
@@ -118,12 +123,12 @@ export function groupTrips(items, now = Date.now()) {
 }
 
 // Guarda artículos como compras. place se aplica a todas las compras creadas.
-export function archiveItems(ledger, items, { place = '', now = Date.now(), auto = false } = {}) {
+export function archiveItems(ledger, items, { place = '', placeName = '', now = Date.now(), auto = false } = {}) {
   const next = clone(ledger);
   const created = [];
   for (const g of groupTrips(items, now)) {
     const its = g.items.map((it) => ({ name: it.name || '', code: it.code || '', cents: it.cents, qty: it.qty }));
-    const p = { id: pid(now), day: g.day, start: g.start, end: g.end, place: PLACE_LABEL[place] ? place : '', items: its, total: its.reduce((s, it) => s + it.cents * it.qty, 0), auto };
+    const p = { id: pid(now), day: g.day, start: g.start, end: g.end, place: PLACE_LABEL[place] ? place : '', placeName: cleanPlaceName(placeName), items: its, total: its.reduce((s, it) => s + it.cents * it.qty, 0), auto };
     next.purchases.push(p);
     created.push(p.id);
   }
@@ -223,4 +228,64 @@ export function setPlace(ledger, id, place) {
   const p = next.purchases.find((x) => x.id === id);
   if (p) p.place = PLACE_LABEL[place] ? place : '';
   return next;
+}
+
+export function setPlaceName(ledger, id, name) {
+  const next = clone(ledger);
+  const p = next.purchases.find((x) => x.id === id);
+  if (p) p.placeName = cleanPlaceName(name);
+  return next;
+}
+
+// Lugares usados antes (para autocompletar y recordar su tipo). Más usados primero.
+export function knownPlaces(ledger) {
+  const map = new Map();
+  for (const p of ledger.purchases) {
+    if (!p.placeName) continue;
+    const k = p.placeName.toLowerCase();
+    const cur = map.get(k) || { name: p.placeName, place: '', count: 0, last: '' };
+    cur.count++;
+    if (p.day >= cur.last) {
+      cur.last = p.day;
+      cur.name = p.placeName;
+      if (p.place) cur.place = p.place;
+    }
+    map.set(k, cur);
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count || (a.last < b.last ? 1 : -1));
+}
+
+export function placeTypeFor(ledger, name) {
+  const k = cleanPlaceName(name).toLowerCase();
+  if (!k) return '';
+  return knownPlaces(ledger).find((x) => x.name.toLowerCase() === k)?.place || '';
+}
+
+// CSV del mes para importar en otra app de gastos.
+// Una fila por compra: Fecha (AAAA-MM-DD), Hora, Lugar, Tipo de gasto, Monto (punto decimal),
+// Moneda, Artículos, Detalle. Separador coma, UTF-8 con BOM (para que Excel respete los acentos).
+export const CSV_HEADER = ['Fecha', 'Hora', 'Lugar', 'Tipo de gasto', 'Monto', 'Moneda', 'Artículos', 'Detalle'];
+
+function csvCell(v) {
+  const s = String(v ?? '');
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+export function monthCSV(ledger, mk) {
+  const rows = monthTotals(ledger, mk)
+    .purchases.slice()
+    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : a.start - b.start));
+  const lines = [CSV_HEADER.map(csvCell).join(',')];
+  for (const p of rows) {
+    const d = p.start ? new Date(p.start) : null;
+    const hora = d ? `${pad(d.getHours())}:${pad(d.getMinutes())}` : '';
+    const detalle = p.items.map((it) => `${it.name || 'Artículo'} x${it.qty}`).join('; ');
+    const monto = `${Math.floor(p.total / 100)}.${pad(p.total % 100)}`;
+    lines.push(
+      [p.day, hora, p.placeName || '', PLACE_LABEL[p.place] || 'Sin especificar', monto, 'ARS', p.items.reduce((s, it) => s + it.qty, 0), detalle]
+        .map(csvCell)
+        .join(','),
+    );
+  }
+  return `\ufeff${lines.join('\r\n')}\r\n`;
 }

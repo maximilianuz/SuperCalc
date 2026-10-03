@@ -21,6 +21,10 @@ import {
   isClosed,
   deletePurchase,
   setPlace,
+  setPlaceName,
+  knownPlaces,
+  placeTypeFor,
+  monthCSV,
   PLACES,
   PLACE_LABEL,
 } from './ledger.js';
@@ -1131,11 +1135,33 @@ const monthName = (mk) => monthLabel(mk).split(' ')[0];
 let finishPlace = '';
 const sheetFinish = $('#sheet-finish');
 
+let finishPlacePicked = false; // la persona eligió el tipo a mano: no lo pisamos al escribir el lugar
+const finishName = $('#finish-place-name');
+
+function fillKnownPlaces() {
+  $('#known-places').innerHTML = knownPlaces(ledger)
+    .slice(0, 100)
+    .map((p) => `<option value="${esc(p.name)}"></option>`)
+    .join('');
+}
+
 $('#btn-finish').addEventListener('click', () => {
   if (!list.items.length) return;
   finishPlace = '';
+  finishPlacePicked = false;
+  finishName.value = '';
+  fillKnownPlaces();
   renderFinish();
   openDialog(sheetFinish);
+});
+
+finishName.addEventListener('input', () => {
+  if (finishPlacePicked) return;
+  const t = placeTypeFor(ledger, finishName.value);
+  if (t && t !== finishPlace) {
+    finishPlace = t;
+    $('#finish-places').innerHTML = placeChips(finishPlace);
+  }
 });
 
 function placeChips(selected) {
@@ -1162,6 +1188,7 @@ $('#finish-places').addEventListener('click', (e) => {
   const b = e.target.closest('[data-place]');
   if (!b) return;
   finishPlace = finishPlace === b.dataset.place ? '' : b.dataset.place;
+  finishPlacePicked = true;
   $('#finish-places').innerHTML = placeChips(finishPlace);
 });
 
@@ -1170,7 +1197,7 @@ $('#finish-form').addEventListener('submit', (e) => {
   if (!list.items.length) return sheetFinish.close();
   const before = { ledger, items: list.items };
   const total = totals(list).cents;
-  ledger = archiveItems(ledger, list.items, { place: finishPlace, now: Date.now() }).ledger;
+  ledger = archiveItems(ledger, list.items, { place: finishPlace, placeName: finishName.value, now: Date.now() }).ledger;
   list.items = [];
   saveLedger();
   sheetFinish.close();
@@ -1231,7 +1258,10 @@ function renderCloseCard() {
     <p class="close-kicker">Cierre de ${esc(monthLabel(c.month))}</p>
     <p class="close-total">${esc(formatMoney(sum.total))}</p>
     <p class="close-meta">${plural(sum.count, 'compra', 'compras')}${sum.pct != null ? ` · ${pctSpan(sum.pct, monthName(prevMonthKey(c.month)))}` : ''}</p>
-    <button type="button" class="btn small secondary" data-act="see">Ver el mes</button>
+    <div class="close-actions">
+      <button type="button" class="btn small secondary" data-act="see">Ver el mes</button>
+      <button type="button" class="btn small secondary" data-act="export">Exportar CSV</button>
+    </div>
     <button type="button" class="icon-btn close-x" data-act="dismiss" aria-label="Cerrar resumen del mes">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
     </button>`;
@@ -1241,6 +1271,7 @@ closeCard.addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]');
   if (!b) return;
   const mk = closeCard.dataset.month;
+  if (b.dataset.act === 'export') return exportMonth(mk);
   ledger = markCloseSeen(ledger, mk);
   saveLedger();
   renderCloseCard();
@@ -1370,7 +1401,8 @@ function renderMonth() {
     <div class="big-total">${esc(formatMoney(sum.total))}</div>
     <p class="sub-line">${[plural(sum.count, 'compra', 'compras'), state].filter(Boolean).map(esc).join(' · ')}${sum.pct != null ? ` · ${pctSpan(sum.pct, monthName(prevMonthKey(mk)))}` : ''}</p>
     ${prog && prog.month === mk ? `<p class="sub-line">Más ${esc(formatMoney(prog.cents))} de la lista actual, todavía sin guardar.</p>` : ''}
-    ${places.length ? `<h3 class="section-title">Por lugar</h3><ul class="place-bars">${places
+    ${t.purchases.length ? `<button type="button" class="btn small secondary export-btn" id="g-export"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14" /></svg>Exportar ${esc(monthName(mk))} (CSV)</button>` : ''}
+    ${places.length ? `<h3 class="section-title">Por tipo de gasto</h3><ul class="place-bars">${places
       .map(
         ([id, c]) =>
           `<li><span>${esc(PLACE_LABEL[id] || 'Sin especificar')}</span><b>${esc(formatMoney(c))}</b><span class="track"><span class="fill" style="width:${((c / maxPlace) * 100).toFixed(1)}%"></span></span></li>`,
@@ -1380,9 +1412,9 @@ function renderMonth() {
     ${t.purchases.length ? `<ul class="prods">${t.purchases
       .map(
         (p) => `<li><button type="button" class="purchase-row" data-id="${esc(p.id)}">
-        <span class="row-title">${esc(dayLabel(p.day))} · ${esc(PLACE_LABEL[p.place] || 'Sin especificar')}</span>
+        <span class="row-title">${esc(dayLabel(p.day))} · ${esc(p.placeName || PLACE_LABEL[p.place] || 'Sin especificar')}</span>
         <span class="row-amount">${esc(formatMoney(p.total))}</span>
-        <span class="row-sub">${esc([timeRange(p), plural(p.items.length, 'artículo', 'artículos'), p.auto ? 'guardada sola' : ''].filter(Boolean).join(' · '))}</span>
+        <span class="row-sub">${esc([p.placeName ? PLACE_LABEL[p.place] || 'Sin tipo' : '', timeRange(p), plural(p.items.length, 'artículo', 'artículos'), p.auto ? 'guardada sola' : ''].filter(Boolean).join(' · '))}</span>
       </button></li>`,
       )
       .join('')}</ul>` : '<p class="muted">No hay compras guardadas este mes.</p>'}`;
@@ -1390,6 +1422,8 @@ function renderMonth() {
     gv = { ...gv, mode: 'purchase', id: b.dataset.id };
     renderGastos();
   };
+  const ex = $('#g-export');
+  if (ex) ex.onclick = () => exportMonth(mk);
 }
 
 function renderPurchase() {
@@ -1400,8 +1434,12 @@ function renderPurchase() {
   gBody.innerHTML = `
     <div class="big-total">${esc(formatMoney(p.total))}</div>
     <p class="sub-line">${esc([cap(dayLabel(p.day)) + ' ' + p.day.slice(0, 4), timeRange(p), plural(p.items.length, 'artículo', 'artículos'), plural(units, 'unidad', 'unidades')].filter(Boolean).join(' · '))}</p>
-    <h3 class="section-title">Lugar</h3>
-    <div class="chips place-chips" id="g-places" role="radiogroup" aria-label="Lugar de compra">${placeChips(p.place)}</div>
+    <label class="field">
+      <span class="field-label">Lugar</span>
+      <input id="g-place-name" class="input" type="text" list="known-places" autocomplete="off" autocapitalize="words" maxlength="60" placeholder="Ej.: Coto Palermo" value="${esc(p.placeName)}" />
+    </label>
+    <h3 class="section-title">Tipo de gasto</h3>
+    <div class="chips place-chips" id="g-places" role="radiogroup" aria-label="Tipo de gasto">${placeChips(p.place)}</div>
     <h3 class="section-title">Artículos</h3>
     <ul class="p-items">${p.items
       .map(
@@ -1409,10 +1447,30 @@ function renderPurchase() {
       )
       .join('')}</ul>
     <div class="danger-zone"><button type="button" class="btn danger-ghost" id="g-del">Borrar compra</button></div>`;
+  fillKnownPlaces();
+  const nameInput = $('#g-place-name');
+  const saveName = () => {
+    const cur = ledger.purchases.find((x) => x.id === p.id);
+    if (!cur || cur.placeName === nameInput.value.replace(/\s+/g, ' ').trim()) return;
+    ledger = setPlaceName(ledger, p.id, nameInput.value);
+    // Si el lugar ya se usó antes y la compra no tiene tipo, se lo ponemos
+    const t = placeTypeFor(ledger, nameInput.value);
+    if (t && !cur.place) ledger = setPlace(ledger, p.id, t);
+    saveLedger();
+    const chips = $('#g-places');
+    if (chips) chips.innerHTML = placeChips(ledger.purchases.find((x) => x.id === p.id).place);
+  };
+  nameInput.addEventListener('change', saveName);
+  nameInput.addEventListener('blur', saveName);
+  nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') nameInput.blur();
+  });
   $('#g-places').onclick = (e) => {
     const b = e.target.closest('[data-place]');
     if (!b) return;
-    ledger = setPlace(ledger, p.id, p.place === b.dataset.place ? '' : b.dataset.place);
+    saveName();
+    const cur = ledger.purchases.find((x) => x.id === p.id);
+    ledger = setPlace(ledger, p.id, cur.place === b.dataset.place ? '' : b.dataset.place);
     saveLedger();
     renderGastos();
   };
@@ -1436,6 +1494,45 @@ function renderPurchase() {
       },
     });
   };
+}
+
+// Exportar el mes como CSV: en el APK abre «Compartir» de Android (para mandarlo a otra app);
+// en el navegador lo comparte si se puede o lo descarga.
+async function exportMonth(mk) {
+  const csv = monthCSV(ledger, mk);
+  const name = `compras-${mk}.csv`;
+  const title = `Compras de ${monthLabel(mk)}`;
+  const P = window.Capacitor?.Plugins;
+  if (isNative && P?.Filesystem && P?.Share) {
+    try {
+      const res = await P.Filesystem.writeFile({ path: name, data: csv, directory: 'CACHE', encoding: 'utf8' });
+      await P.Share.share({ title, dialogTitle: 'Enviar el archivo a…', files: [res.uri] });
+    } catch (err) {
+      if (!/cancel/i.test(String(err?.message || err))) {
+        console.error(err);
+        toast('No se pudo compartir el archivo.', { tone: 'bad' });
+      }
+    }
+    return;
+  }
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  try {
+    const file = new File([blob], name, { type: 'text/csv' });
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title });
+      return;
+    }
+  } catch (err) {
+    if (err?.name === 'AbortError') return;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast(`Descargaste ${name}`);
 }
 
 // ---------- Arranque ----------

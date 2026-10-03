@@ -1881,3 +1881,13 @@ dialog .toast-host {
 .shutter:disabled {
   opacity: 0.4;
 }
+
+.close-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.export-btn {
+  margin: 12px 0 2px;
+}

@@ -236,8 +236,13 @@
         <div class="sheet-scroll">
           <div class="finish-total" id="finish-total"></div>
           <ul class="trips" id="finish-trips"></ul>
-          <p class="field-label">¿Dónde compraste?</p>
-          <div class="chips place-chips" id="finish-places" role="radiogroup" aria-label="Lugar de compra"></div>
+          <label class="field">
+            <span class="field-label">¿Dónde compraste? <em>opcional</em></span>
+            <input id="finish-place-name" type="text" list="known-places" autocomplete="off" autocapitalize="words" maxlength="60" placeholder="Ej.: Coto Palermo, kiosco de la esquina" />
+          </label>
+          <datalist id="known-places"></datalist>
+          <p class="field-label">Tipo de gasto</p>
+          <div class="chips place-chips" id="finish-places" role="radiogroup" aria-label="Tipo de gasto"></div>
           <p class="muted small-note">Se guarda en Gastos con la fecha y hora en que agregaste los artículos, y la lista queda vacía.</p>
         </div>
         <div class="sheet-actions">

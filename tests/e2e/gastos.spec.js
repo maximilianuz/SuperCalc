@@ -161,3 +161,64 @@ test('historial anual: barras por mes, total, promedio, años y borrar compra', 
   await g.locator('.toast-host').getByRole('button', { name: 'Deshacer' }).click();
   await expect(page.locator('#gastos-title')).toHaveText('Compra del jue 5 mar');
 });
+
+test('lugar escrito a mano, editable, con tipo recordado y exportación CSV del mes', async ({ page, context }) => {
+  await page.clock.setFixedTime(at('2026-09-06T10:05:00'));
+  await openOffline(page, context);
+  await addManual(page, { name: 'Yerba', price: '4250' });
+  await addManual(page, { name: 'Leche', price: '1100' });
+  await page.click('#btn-finish');
+  await page.fill('#finish-place-name', 'Coto Palermo');
+  await page.locator('#finish-places').getByRole('radio', { name: 'Supermercado' }).click();
+  await page.click('#btn-finish-save');
+
+  // Otra compra en el mismo lugar: al escribirlo se elige solo el tipo
+  await page.clock.setFixedTime(at('2026-09-13T11:00:00'));
+  await reloadSettled(page);
+  await addManual(page, { name: 'Arroz', price: '1599,50' });
+  await page.click('#btn-finish');
+  await page.fill('#finish-place-name', 'coto palermo');
+  await expect(page.locator('#finish-places').getByRole('radio', { name: 'Supermercado' })).toHaveAttribute('aria-checked', 'true');
+  await page.click('#btn-finish-save');
+
+  // Editar el lugar de una compra desde Gastos
+  await page.click('#btn-gastos');
+  const g = page.locator('#sheet-gastos');
+  await g.locator('.month-row', { hasText: 'septiembre' }).click();
+  await expect(g.locator('.purchase-row').first()).toContainText('dom 13 sept · coto palermo');
+  await g.locator('.purchase-row').first().click();
+  await page.fill('#g-place-name', 'Día Belgrano');
+  await page.press('#g-place-name', 'Enter');
+  await g.getByRole('radio', { name: 'Almacén / minimercado' }).click();
+  await page.click('#gastos-back');
+  await expect(g.locator('.purchase-row').first()).toContainText('Día Belgrano');
+  await expect(g.locator('.purchase-row').first()).toContainText('Almacén / minimercado');
+
+  // Exportar
+  const dl = page.waitForEvent('download');
+  await page.click('#g-export');
+  const d = await dl;
+  expect(d.suggestedFilename()).toBe('compras-2026-09.csv');
+  const { readFileSync } = await import('node:fs');
+  const text = readFileSync(await d.path(), 'utf8');
+  expect(text.charCodeAt(0)).toBe(0xfeff);
+  expect(text.slice(1).trimEnd().split('\r\n')).toEqual([
+    'Fecha,Hora,Lugar,Tipo de gasto,Monto,Moneda,Artículos,Detalle',
+    '2026-09-06,10:05,Coto Palermo,Supermercado,5350.00,ARS,2,Leche x1; Yerba x1',
+    '2026-09-13,11:00,Día Belgrano,Almacén / minimercado,1599.50,ARS,1,Arroz x1',
+  ]);
+});
+
+test('el resumen de cierre de mes también exporta', async ({ page, context }) => {
+  await page.clock.setFixedTime(at('2026-09-20T10:00:00'));
+  await openOffline(page, context);
+  await addManual(page, { name: 'Pan', price: '1500' });
+  await page.click('#btn-finish');
+  await page.fill('#finish-place-name', 'Panadería');
+  await page.click('#btn-finish-save');
+  await page.clock.setFixedTime(at('2026-10-01T09:00:00'));
+  await reloadSettled(page);
+  const dl = page.waitForEvent('download');
+  await page.locator('#close-card').getByRole('button', { name: 'Exportar CSV' }).click();
+  expect((await dl).suggestedFilename()).toBe('compras-2026-09.csv');
+});

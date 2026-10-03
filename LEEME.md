@@ -48,8 +48,10 @@ Repetí los pasos 1, 2 y 4. Todos los APK se firman con la misma clave (`signing
   y los marca «A confirmar» (esos no entran al historial hasta que confirmes que son el precio final).
 - **Código**: lee EAN-13 / EAN-8 / UPC-A de una foto (también de la misma foto del precio).
 - **Historial de precios** por producto, con gráfico, subas/bajas, actualizar y borrar con «Deshacer».
-- **Terminar compra**: guarda la lista en **Gastos** con el lugar (Supermercado, Almacén/minimercado, Kiosco,
-  Verdulería/carnicería u Otro) y la deja vacía. «Vaciar» en cambio descarta sin guardar.
+- **Terminar compra**: guarda la lista en **Gastos** con el **lugar** escrito a mano (por ejemplo «Coto Palermo»,
+  con autocompletado de los que ya usaste) y el **tipo de gasto** (Supermercado, Almacén/minimercado, Kiosco,
+  Verdulería/carnicería u Otro). Si escribís un lugar que ya usaste, el tipo se elige solo. Las dos cosas se pueden
+  editar después desde Gastos → mes → compra. «Vaciar» en cambio descarta sin guardar.
 - **Día de compra automático**: cada artículo guarda la hora en que lo agregaste. Si entre dos artículos pasan
   más de 2 horas se toman como compras distintas (súper a la mañana, kiosco a la tarde). Si abrís la app otro día
   con artículos de un día anterior, esa compra se guarda sola en Gastos con su fecha (con «Deshacer»).
@@ -57,6 +59,25 @@ Repetí los pasos 1, 2 y 4. Todos los APK se firman con la misma clave (`signing
   y variación contra el mes previo.
 - **Gastos (historial anual)**: total del año, promedio por mes, barras por mes, detalle de cada mes por lugar
   y por compra (artículos, cambiar el lugar, borrar con «Deshacer»).
+
+## Exportar el mes (para otra app de gastos)
+En **Gastos → mes → «Exportar … (CSV)»** (o en el resumen de cierre de mes → «Exportar CSV»).
+En el celular se abre **Compartir** de Android para mandar el archivo directo a la otra app (o guardarlo en Drive,
+mandarlo por mail, etc.). El archivo se llama `compras-AAAA-MM.csv` y tiene **una fila por compra**:
+
+| Columna | Ejemplo | Notas |
+|---|---|---|
+| Fecha | `2026-09-06` | AAAA-MM-DD |
+| Hora | `10:05` | hora del primer artículo |
+| Lugar | `Coto Palermo` | lo que escribiste |
+| Tipo de gasto | `Supermercado` | o `Sin especificar` |
+| Monto | `5350.00` | punto decimal, sin separador de miles |
+| Moneda | `ARS` | |
+| Artículos | `2` | unidades |
+| Detalle | `Yerba x1; Leche x1` | |
+
+Separador coma, codificación UTF-8 (con BOM, para que Excel muestre bien los acentos). Si la otra app pide otro
+formato (punto y coma, coma decimal, nombres de columna fijos), se puede adaptar.
 
 ## Para desarrollo (computadora)
 ```bash

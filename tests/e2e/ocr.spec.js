@@ -158,8 +158,9 @@ test('«Leer precio con foto» desde la hoja no pierde lo cargado', async ({ pag
   const p = await painter(context);
   const b64 = await renderLabel(p, LABELS.sinImpuestos);
   await p.close();
-  const chooser = page.waitForEvent('filechooser');
   await page.click('#btn-item-photo');
+  const chooser = page.waitForEvent('filechooser');
+  await page.click('#cam-gallery');
   await (await chooser).setFiles(filePayload('x.png', b64));
   await expect(page.locator('#item-busy')).toBeHidden({ timeout: 120_000 });
   await expect(page.locator('#f-name')).toHaveValue('Aceite Natura');
@@ -197,4 +198,12 @@ test('respaldo: sin SIMD usa el core común y lee igual', async ({ page, context
   await expect(page.locator('#cands .chip.suggested b')).toHaveText('$ 4.250,00');
   expect(seen.some((u) => u.endsWith('/ocr/tesseract-core-lstm.wasm.js'))).toBe(true);
   expect(seen.some((u) => u.endsWith('/ocr/tesseract-core-simd-lstm.wasm.js'))).toBe(false);
+});
+
+test('cartel con solo el precio enorme: si PSM 11 no ve nada, reintenta con PSM 6', async ({ page, context }) => {
+  LABELS.soloPrecio = { items: [{ text: 'Aceite', x: 60, y: 120, size: 60 }, { text: '$ 2.890', x: 60, y: 420, size: 230 }] };
+  await openOffline(page, context);
+  await scan(page, context, 'soloPrecio');
+  await expect(page.locator('#cands .chip.suggested b')).toHaveText('$ 2.890,00');
+  expect(await page.evaluate(() => window.__lastScan.psm)).toBe(6);
 });

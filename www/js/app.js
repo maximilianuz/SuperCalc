@@ -1,6 +1,29 @@
 import { formatMoney, parseMoneyInput, centsToInput, formatPercent } from './money.js';
 import { loadJSON, saveJSON } from './storage.js';
 import { emptyList, sanitizeList, totals, findSame, limitState, newId } from './list.js';
+import { cameraSupported, startCamera, stopCamera, grabFrame, torchSupported, setTorch, cameraErrorText } from './camera.js';
+import {
+  emptyLedger,
+  sanitizeLedger,
+  archiveItems,
+  groupTrips,
+  staleItems,
+  closeMonths,
+  closeSummary,
+  markCloseSeen,
+  yearSummary,
+  years,
+  monthKey,
+  dayKey,
+  monthLabel,
+  prevMonthKey,
+  monthTotals,
+  isClosed,
+  deletePurchase,
+  setPlace,
+  PLACES,
+  PLACE_LABEL,
+} from './ledger.js';
 import {
   emptyStore,
   sanitizeStore,
@@ -80,6 +103,7 @@ const el = {
   empty: $('#empty'),
   filePhoto: $('#file-photo'),
   fileCode: $('#file-code'),
+  fileGallery: $('#file-gallery'),
   sheetItem: $('#sheet-item'),
   itemForm: $('#item-form'),
   itemTitle: $('#item-title'),
@@ -346,7 +370,7 @@ $('#btn-clear').addEventListener('click', async () => {
   if (!n) return;
   const ok = await confirmDialog({
     title: '¿Vaciar la lista?',
-    text: `Se van a quitar ${plural(n, 'artículo', 'artículos')}. El historial de precios se mantiene.`,
+    text: `Se van a quitar ${plural(n, 'artículo', 'artículos')} sin guardarlos en Gastos (para guardarlos usá «Terminar compra»). El historial de precios se mantiene.`,
     ok: 'Vaciar',
   });
   if (!ok) return;
@@ -595,42 +619,38 @@ function saveDraft() {
 }
 
 // ---------- Foto del precio y código de barras ----------
-let photoFromSheet = false;
-let codeFromSheet = false;
+// Destino del próximo archivo elegido (cámara del sistema o galería).
+let fileTarget = { kind: 'photo', keep: false };
 
-$('#btn-photo').addEventListener('click', () => {
-  photoFromSheet = false;
-  el.filePhoto.value = '';
-  el.filePhoto.click();
-});
-$('#btn-item-photo').addEventListener('click', () => {
-  photoFromSheet = true;
-  el.filePhoto.value = '';
-  el.filePhoto.click();
-});
-$('#btn-code').addEventListener('click', () => {
-  codeFromSheet = false;
-  el.fileCode.value = '';
-  el.fileCode.click();
-});
-$('#btn-item-code').addEventListener('click', () => {
-  codeFromSheet = true;
-  el.fileCode.value = '';
-  el.fileCode.click();
-});
+function pickFile(input, kind, keep) {
+  fileTarget = { kind, keep };
+  input.value = '';
+  input.click();
+}
+
+$('#btn-photo').addEventListener('click', () => openCamera('photo', false));
+$('#btn-item-photo').addEventListener('click', () => openCamera('photo', true));
+$('#btn-code').addEventListener('click', () => openCamera('code', false));
+$('#btn-item-code').addEventListener('click', () => openCamera('code', true));
 $('#btn-manual').addEventListener('click', () => {
   openItemSheet({ mode: 'add' });
   el.price.focus();
 });
 
-el.filePhoto.addEventListener('change', () => {
-  const f = el.filePhoto.files?.[0];
-  if (f) handlePhoto(f, photoFromSheet && el.sheetItem.open);
-});
-el.fileCode.addEventListener('change', () => {
-  const f = el.fileCode.files?.[0];
-  if (f) handleCode(f, codeFromSheet && el.sheetItem.open);
-});
+function onFile(input, kind) {
+  input.addEventListener('change', () => {
+    const f = input.files?.[0];
+    const target = { ...fileTarget, kind: kind || fileTarget.kind };
+    fileTarget = { kind: 'photo', keep: false };
+    if (!f) return;
+    const keep = target.keep && el.sheetItem.open;
+    if (target.kind === 'code') processCode(({ loadImage }) => loadImage(f), keep);
+    else processPhoto(({ loadImage }) => loadImage(f), keep);
+  });
+}
+onFile(el.filePhoto, 'photo');
+onFile(el.fileCode, 'code');
+onFile(el.fileGallery, null);
 
 function setBusy(text) {
   el.busy.hidden = !text;
@@ -644,7 +664,8 @@ function showMsg(text, tone) {
   el.scanMsg.className = `notice${tone ? ` ${tone}` : ''}`;
 }
 
-const loadMods = () => Promise.all([import('./imageutil.js'), import('./ocr.js'), import('./barcode.js')]);
+const loadMods = () =>
+  Promise.all([import('./imageutil.js'), import('./ocr.js'), import('./barcode.js')]).then(([a, b, c]) => ({ ...a, ...b, ...c }));
 
 function applyCode(code) {
   draft.code = code;
@@ -654,7 +675,13 @@ function applyCode(code) {
   return p;
 }
 
-async function handlePhoto(file, keep) {
+function codeMessage(code, p) {
+  showMsg(p ? `Código ${code}: ${p.name || 'producto conocido'}.` : `Código ${code} leído.`);
+  if (!el.price.value && document.activeElement !== el.name) el.price.focus();
+}
+
+// Foto del precio: getImg(mods) devuelve la imagen (archivo o cuadro de la cámara).
+async function processPhoto(getImg, keep, presetCode = null) {
   if (!keep) openItemSheet({ mode: 'add' });
   const seq = ++scanSeq;
   const alive = () => seq === scanSeq && el.sheetItem.open;
@@ -662,19 +689,22 @@ async function handlePhoto(file, keep) {
   el.scanBox.hidden = true;
   setBusy('Abriendo la foto…');
   try {
-    const [{ loadImage }, { readPrice }, { readBarcode }] = await loadMods();
-    const img = await loadImage(file);
+    const mods = await loadMods();
+    const img = await getImg(mods);
     if (!alive()) return;
     let code = null;
     if (!draft.code) {
-      setBusy('Buscando código de barras…');
-      try {
-        code = await readBarcode(img);
-      } catch {}
+      if (presetCode) code = presetCode;
+      else {
+        setBusy('Buscando código de barras…');
+        try {
+          code = await mods.readBarcode(img);
+        } catch {}
+      }
       if (!alive()) return;
       if (code) applyCode(code);
     }
-    const res = await readPrice(img, (t) => alive() && setBusy(t));
+    const res = await mods.readPrice(img, (t) => alive() && setBusy(t));
     if (!alive()) return;
     showCandidates(res, code);
   } catch (err) {
@@ -720,24 +750,19 @@ function showCandidates(res, code) {
   };
 }
 
-async function handleCode(file, keep) {
+async function processCode(getImg, keep) {
   if (!keep) openItemSheet({ mode: 'add' });
   const seq = ++scanSeq;
   const alive = () => seq === scanSeq && el.sheetItem.open;
   showMsg('');
   setBusy('Buscando el código…');
   try {
-    const [{ loadImage }, , { readBarcode }] = await loadMods();
-    const img = await loadImage(file);
-    const code = await readBarcode(img);
+    const mods = await loadMods();
+    const img = await getImg(mods);
+    const code = await mods.readBarcode(img);
     if (!alive()) return;
-    if (code) {
-      const p = applyCode(code);
-      showMsg(p ? `Código ${code}: ${p.name || 'producto conocido'}.` : `Código ${code} leído.`);
-      if (!el.price.value && document.activeElement !== el.name) el.price.focus();
-    } else {
-      showMsg('No encontramos un código de barras en la foto. Probá más cerca, con buena luz y el código derecho.', 'warn');
-    }
+    if (code) codeMessage(code, applyCode(code));
+    else showMsg('No encontramos un código de barras en la foto. Probá más cerca, con buena luz y el código derecho.', 'warn');
   } catch (err) {
     console.error(err);
     if (alive()) showMsg('No pudimos leer el código. Probá con otra foto.', 'warn');
@@ -745,6 +770,116 @@ async function handleCode(file, keep) {
     if (seq === scanSeq) setBusy(null);
   }
 }
+
+// ---------- Cámara en vivo ----------
+const cam = { mode: 'photo', keep: false, stream: null, loop: 0, code: null };
+const camEl = {
+  dlg: $('#sheet-camera'),
+  video: $('#cam-video'),
+  frame: $('#cam-frame'),
+  hint: $('#cam-hint'),
+  status: $('#cam-status'),
+  error: $('#cam-error'),
+  errorText: $('#cam-error-text'),
+  shutter: $('#cam-shutter'),
+  torch: $('#cam-torch'),
+};
+
+function openCamera(mode, keep) {
+  if (!cameraSupported()) return pickFile(mode === 'code' ? el.fileCode : el.filePhoto, mode, keep);
+  cam.mode = mode;
+  cam.keep = keep;
+  cam.code = null;
+  camEl.dlg.classList.toggle('code', mode === 'code');
+  camEl.hint.textContent = mode === 'code' ? 'Apuntá al código de barras' : 'Apuntá al cartel del precio';
+  camEl.shutter.setAttribute('aria-label', mode === 'code' ? 'Sacar foto del código' : 'Sacar foto del precio');
+  camEl.status.hidden = true;
+  camEl.error.hidden = true;
+  camEl.frame.classList.remove('found');
+  camEl.shutter.disabled = true;
+  camEl.torch.hidden = true;
+  camEl.torch.setAttribute('aria-pressed', 'false');
+  openDialog(camEl.dlg);
+  const id = ++cam.loop;
+  startCamera(camEl.video)
+    .then((stream) => {
+      if (id !== cam.loop || !camEl.dlg.open) return stopCamera(stream);
+      cam.stream = stream;
+      camEl.shutter.disabled = false;
+      camEl.torch.hidden = !torchSupported(stream);
+      scanLoop(id);
+    })
+    .catch((err) => {
+      if (id !== cam.loop) return;
+      console.error(err);
+      camEl.errorText.textContent = cameraErrorText(err);
+      camEl.error.hidden = false;
+    });
+}
+
+camEl.dlg.addEventListener('close', () => {
+  cam.loop++;
+  stopCamera(cam.stream, camEl.video);
+  cam.stream = null;
+});
+
+async function scanLoop(id) {
+  const { readBarcodeFrame } = await import('./barcode.js');
+  while (id === cam.loop && camEl.dlg.open) {
+    const frame = grabFrame(camEl.video, 1000);
+    let code = null;
+    if (frame) {
+      try {
+        code = await readBarcodeFrame(frame);
+      } catch {}
+    }
+    if (id !== cam.loop) return;
+    if (code) {
+      try {
+        navigator.vibrate?.(40);
+      } catch {}
+      if (cam.mode === 'code') {
+        const keep = cam.keep;
+        camEl.dlg.close();
+        if (!keep || !el.sheetItem.open) openItemSheet({ mode: 'add' });
+        codeMessage(code, applyCode(code));
+        return;
+      }
+      if (code !== cam.code) {
+        cam.code = code;
+        camEl.frame.classList.add('found');
+        camEl.status.textContent = `Código ${code} ✓ · ahora sacale foto al precio`;
+        camEl.status.hidden = false;
+      }
+    }
+    await new Promise((r) => setTimeout(r, 220));
+  }
+}
+
+camEl.shutter.addEventListener('click', () => {
+  const frame = grabFrame(camEl.video, 2000);
+  if (!frame) return;
+  const { mode, keep, code } = cam;
+  camEl.dlg.close();
+  const k = keep && el.sheetItem.open;
+  if (mode === 'code') processCode(async () => frame, k);
+  else processPhoto(async () => frame, k, code);
+});
+
+$('#cam-gallery').addEventListener('click', () => {
+  const { mode, keep } = cam;
+  camEl.dlg.close();
+  pickFile(el.fileGallery, mode, keep);
+});
+$('#cam-fallback').addEventListener('click', () => {
+  const { mode, keep } = cam;
+  camEl.dlg.close();
+  pickFile(mode === 'code' ? el.fileCode : el.filePhoto, mode, keep);
+});
+camEl.torch.addEventListener('click', async () => {
+  const on = camEl.torch.getAttribute('aria-pressed') !== 'true';
+  if (await setTorch(cam.stream, on)) camEl.torch.setAttribute('aria-pressed', String(on));
+});
 
 // ---------- Historial de precios ----------
 let histView = { mode: 'list', key: null, q: '' };
@@ -962,6 +1097,347 @@ function restoreHist(before, key) {
   }
 }
 
+// ---------- Gastos: terminar compra, cambio de día, cierres mensuales e historial anual ----------
+const LEDGER_KEY = 'compras.gastos.v1';
+let ledger = loadJSON(LEDGER_KEY, sanitizeLedger, emptyLedger);
+let skipStale = false; // si la persona deshizo el guardado automático, no insistimos hasta reabrir
+const saveLedger = () => saveJSON(LEDGER_KEY, ledger);
+const WEEKDAYS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+const cap = (str) => str.charAt(0).toUpperCase() + str.slice(1);
+const hhmm = (t) => {
+  const d = new Date(t);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+const dayDate = (day) => {
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+const dayLabel = (day) => {
+  const d = dayDate(day);
+  return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+};
+const relDay = (day) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((today - dayDate(day)) / 86_400_000);
+  return diff === 0 ? 'Hoy' : diff === 1 ? 'Ayer' : cap(dayLabel(day));
+};
+const timeRange = (p) => (p.start && p.end ? (hhmm(p.start) === hhmm(p.end) ? hhmm(p.start) : `${hhmm(p.start)}–${hhmm(p.end)}`) : '');
+const pctSpan = (pct, vs) =>
+  pct == null ? '' : `<span class="${pct > 0 ? 'up' : pct < 0 ? 'down' : ''}">${pct > 0 ? '▲' : pct < 0 ? '▼' : '='} ${esc(formatPercent(pct))} vs ${esc(vs)}</span>`;
+const monthName = (mk) => monthLabel(mk).split(' ')[0];
+
+// Terminar compra
+let finishPlace = '';
+const sheetFinish = $('#sheet-finish');
+
+$('#btn-finish').addEventListener('click', () => {
+  if (!list.items.length) return;
+  finishPlace = '';
+  renderFinish();
+  openDialog(sheetFinish);
+});
+
+function placeChips(selected) {
+  return PLACES.map(
+    (p) => `<button type="button" class="chip" role="radio" aria-checked="${p.id === selected}" data-place="${p.id}">${esc(p.label)}</button>`,
+  ).join('');
+}
+
+function renderFinish() {
+  const trips = groupTrips(list.items, Date.now());
+  $('#finish-total').textContent = formatMoney(totals(list).cents);
+  $('#finish-trips').innerHTML = trips
+    .map((g) => {
+      const total = g.items.reduce((sum, it) => sum + it.cents * it.qty, 0);
+      const range = hhmm(g.start) === hhmm(g.end) ? hhmm(g.start) : `${hhmm(g.start)}–${hhmm(g.end)}`;
+      return `<li><span>${esc(relDay(g.day))} · ${esc(range)} · ${plural(g.items.length, 'artículo', 'artículos')}</span><span>${esc(formatMoney(total))}</span></li>`;
+    })
+    .join('');
+  $('#finish-trips').hidden = trips.length < 2;
+  $('#finish-places').innerHTML = placeChips(finishPlace);
+}
+
+$('#finish-places').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-place]');
+  if (!b) return;
+  finishPlace = finishPlace === b.dataset.place ? '' : b.dataset.place;
+  $('#finish-places').innerHTML = placeChips(finishPlace);
+});
+
+$('#finish-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (!list.items.length) return sheetFinish.close();
+  const before = { ledger, items: list.items };
+  const total = totals(list).cents;
+  ledger = archiveItems(ledger, list.items, { place: finishPlace, now: Date.now() }).ledger;
+  list.items = [];
+  saveLedger();
+  sheetFinish.close();
+  commit();
+  toast(`Guardamos la compra en Gastos (${formatMoney(total)})`, {
+    action: 'Deshacer',
+    onAction: () => {
+      ledger = before.ledger;
+      list.items = before.items.concat(list.items);
+      saveLedger();
+      commit();
+    },
+  });
+});
+
+// Cambio de día y de mes: la compra de un día anterior se guarda sola; los meses pasados se cierran.
+function rollover() {
+  const now = Date.now();
+  const stale = skipStale ? [] : staleItems(list.items, now);
+  if (stale.length) {
+    const before = { ledger, items: list.items };
+    const total = stale.reduce((sum, it) => sum + it.cents * it.qty, 0);
+    const days = new Set(stale.map((it) => dayKey(it.addedAt)));
+    ledger = archiveItems(ledger, stale, { now, auto: true }).ledger;
+    const ids = new Set(stale.map((it) => it.id));
+    list.items = list.items.filter((it) => !ids.has(it.id));
+    saveLedger();
+    commit();
+    const when = days.size === 1 ? `del ${dayLabel(dayKey(stale[0].addedAt))}` : 'de días anteriores';
+    toast(`Guardamos en Gastos la compra ${when} (${formatMoney(total)}). Empezás una lista nueva.`, {
+      action: 'Deshacer',
+      duration: 9000,
+      onAction: () => {
+        skipStale = true;
+        ledger = before.ledger;
+        list.items = before.items;
+        saveLedger();
+        commit();
+      },
+    });
+  }
+  const r = closeMonths(ledger, now);
+  if (r.closed.length) {
+    ledger = r.ledger;
+    saveLedger();
+  }
+  renderCloseCard();
+}
+
+const closeCard = $('#close-card');
+function renderCloseCard() {
+  const c = ledger.closes.filter((x) => !x.seen).pop();
+  closeCard.hidden = !c;
+  if (!c) return;
+  const sum = closeSummary(ledger, c.month);
+  closeCard.dataset.month = c.month;
+  closeCard.innerHTML = `
+    <p class="close-kicker">Cierre de ${esc(monthLabel(c.month))}</p>
+    <p class="close-total">${esc(formatMoney(sum.total))}</p>
+    <p class="close-meta">${plural(sum.count, 'compra', 'compras')}${sum.pct != null ? ` · ${pctSpan(sum.pct, monthName(prevMonthKey(c.month)))}` : ''}</p>
+    <button type="button" class="btn small secondary" data-act="see">Ver el mes</button>
+    <button type="button" class="icon-btn close-x" data-act="dismiss" aria-label="Cerrar resumen del mes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+    </button>`;
+}
+
+closeCard.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const mk = closeCard.dataset.month;
+  ledger = markCloseSeen(ledger, mk);
+  saveLedger();
+  renderCloseCard();
+  if (b.dataset.act === 'see') openGastos({ mode: 'month', year: Number(mk.slice(0, 4)), month: mk });
+});
+
+// Pantalla de gastos
+const sheetGastos = $('#sheet-gastos');
+const gBody = $('#gastos-body');
+let gv = { mode: 'year', year: new Date().getFullYear(), month: null, id: null };
+
+$('#btn-gastos').addEventListener('click', () => openGastos());
+$('#gastos-back').addEventListener('click', () => {
+  if (gv.mode === 'purchase') gv = { ...gv, mode: 'month', id: null };
+  else gv = { ...gv, mode: 'year', month: null };
+  renderGastos();
+});
+
+function openGastos(view) {
+  gv = view || { mode: 'year', year: new Date().getFullYear(), month: null, id: null };
+  renderGastos();
+  openDialog(sheetGastos);
+}
+
+function inProgress() {
+  return list.items.length ? { month: monthKey(Date.now()), cents: totals(list).cents } : null;
+}
+
+function renderGastos() {
+  gBody.scrollTop = 0;
+  if (gv.mode === 'purchase' && ledger.purchases.some((p) => p.id === gv.id)) return renderPurchase();
+  if (gv.mode === 'month' || gv.mode === 'purchase') {
+    gv.mode = 'month';
+    return renderMonth();
+  }
+  renderYear();
+}
+
+function barsSVG(y) {
+  const W = 320;
+  const H = 150;
+  const T = 14;
+  const B = 22;
+  const cur = monthKey(Date.now());
+  const max = Math.max(1, ...y.months.map((m) => m.total + m.inProgress));
+  const slot = W / 12;
+  const bw = slot * 0.56;
+  const ini = ['E', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+  const bars = y.months
+    .map((m, i) => {
+      const x = i * slot + (slot - bw) / 2;
+      const h1 = ((H - T - B) * m.total) / max;
+      const h2 = ((H - T - B) * m.inProgress) / max;
+      const base = H - B;
+      const isCur = m.month === cur;
+      let r = '';
+      if (!m.total && !m.inProgress) r = `<rect class="bar empty" x="${x.toFixed(1)}" y="${base - 2}" width="${bw.toFixed(1)}" height="2" rx="1" />`;
+      if (m.total) r += `<rect class="bar${isCur ? ' cur' : ''}" x="${x.toFixed(1)}" y="${(base - h1).toFixed(1)}" width="${bw.toFixed(1)}" height="${h1.toFixed(1)}" rx="3" />`;
+      if (m.inProgress) r += `<rect class="bar prog" x="${x.toFixed(1)}" y="${(base - h1 - h2).toFixed(1)}" width="${bw.toFixed(1)}" height="${h2.toFixed(1)}" rx="3" />`;
+      return `${r}<text class="lab${isCur ? ' cur' : ''}" x="${(i * slot + slot / 2).toFixed(1)}" y="${H - 6}">${ini[i]}</text>`;
+    })
+    .join('');
+  const best = y.months.reduce((a, m) => (m.total > a.total ? m : a), y.months[0]);
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gasto por mes en ${y.year}${best.total ? `; el mes más alto fue ${esc(monthName(best.month))} con ${esc(formatMoney(best.total))}` : ''}">${bars}</svg>`;
+}
+
+function renderYear() {
+  $('#gastos-back').hidden = true;
+  $('#gastos-title').textContent = 'Gastos';
+  const now = Date.now();
+  const ys = years(ledger, now);
+  const thisYear = new Date(now).getFullYear();
+  const y = yearSummary(ledger, gv.year, inProgress());
+  const rows = y.months
+    .filter((m) => m.count || m.inProgress)
+    .reverse()
+    .map((m) => {
+      const prev = monthTotals(ledger, prevMonthKey(m.month));
+      const pct = prev.count && prev.total && m.count ? ((m.total - prev.total) / prev.total) * 100 : null;
+      const state = m.closed ? 'cerrado' : m.month === monthKey(now) ? 'en curso' : '';
+      const sub = [plural(m.count, 'compra', 'compras'), state, m.inProgress ? `${formatMoney(m.inProgress)} sin guardar` : ''].filter(Boolean).join(' · ');
+      return `<li><button type="button" class="month-row" data-month="${m.month}">
+        <span class="row-title">${esc(monthName(m.month))}</span>
+        <span class="row-amount">${esc(formatMoney(m.total + m.inProgress))}</span>
+        <span class="row-sub">${esc(sub)}</span>
+        <span class="row-tag">${pct == null ? '' : trendTag({ kind: pct > 0 ? 'up' : 'down', pct, prev: prev.total })}</span>
+      </button></li>`;
+    })
+    .join('');
+  gBody.innerHTML = `
+    <div class="year-nav">
+      <button type="button" class="icon-btn" id="g-prev" aria-label="Año anterior" ${gv.year <= ys[0] ? 'disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg></button>
+      <b id="g-year">${gv.year}</b>
+      <button type="button" class="icon-btn" id="g-next" aria-label="Año siguiente" ${gv.year >= thisYear ? 'disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg></button>
+    </div>
+    <div class="big-total" id="g-total">${esc(formatMoney(y.total))}</div>
+    <p class="sub-line">${plural(y.count, 'compra guardada', 'compras guardadas')}${y.monthsWithData ? ` · promedio ${esc(formatMoney(y.average))} por mes (${plural(y.monthsWithData, 'mes', 'meses')} con compras)` : ''}</p>
+    <div class="chart bars">${barsSVG(y)}</div>
+    ${rows ? `<h3 class="section-title">Meses</h3><ul class="prods">${rows}</ul>` : `<div class="hist-empty"><p><strong>Todavía no hay compras guardadas en ${gv.year}.</strong></p><p>Cuando tocás «Terminar compra», o al día siguiente, la compra se guarda acá con su fecha.</p></div>`}`;
+  $('#g-prev').onclick = () => {
+    gv.year--;
+    renderGastos();
+  };
+  $('#g-next').onclick = () => {
+    gv.year++;
+    renderGastos();
+  };
+  for (const b of gBody.querySelectorAll('.month-row')) b.onclick = () => {
+    gv = { ...gv, mode: 'month', month: b.dataset.month };
+    renderGastos();
+  };
+}
+
+function renderMonth() {
+  const mk = gv.month;
+  $('#gastos-back').hidden = false;
+  $('#gastos-title').textContent = cap(monthLabel(mk));
+  const sum = closeSummary(ledger, mk);
+  const t = monthTotals(ledger, mk);
+  const prog = inProgress();
+  const closed = isClosed(ledger, mk);
+  const closeRec = ledger.closes.find((c) => c.month === mk);
+  const state = closed ? `Cerrado el ${fmtDate(closeRec.closedAt)}` : mk === monthKey(Date.now()) ? 'En curso' : '';
+  const places = Object.entries(sum.byPlace).sort((a, b) => b[1] - a[1]);
+  const maxPlace = Math.max(1, ...places.map((x) => x[1]));
+  gBody.innerHTML = `
+    <div class="big-total">${esc(formatMoney(sum.total))}</div>
+    <p class="sub-line">${[plural(sum.count, 'compra', 'compras'), state].filter(Boolean).map(esc).join(' · ')}${sum.pct != null ? ` · ${pctSpan(sum.pct, monthName(prevMonthKey(mk)))}` : ''}</p>
+    ${prog && prog.month === mk ? `<p class="sub-line">Más ${esc(formatMoney(prog.cents))} de la lista actual, todavía sin guardar.</p>` : ''}
+    ${places.length ? `<h3 class="section-title">Por lugar</h3><ul class="place-bars">${places
+      .map(
+        ([id, c]) =>
+          `<li><span>${esc(PLACE_LABEL[id] || 'Sin especificar')}</span><b>${esc(formatMoney(c))}</b><span class="track"><span class="fill" style="width:${((c / maxPlace) * 100).toFixed(1)}%"></span></span></li>`,
+      )
+      .join('')}</ul>` : ''}
+    <h3 class="section-title">Compras</h3>
+    ${t.purchases.length ? `<ul class="prods">${t.purchases
+      .map(
+        (p) => `<li><button type="button" class="purchase-row" data-id="${esc(p.id)}">
+        <span class="row-title">${esc(dayLabel(p.day))} · ${esc(PLACE_LABEL[p.place] || 'Sin especificar')}</span>
+        <span class="row-amount">${esc(formatMoney(p.total))}</span>
+        <span class="row-sub">${esc([timeRange(p), plural(p.items.length, 'artículo', 'artículos'), p.auto ? 'guardada sola' : ''].filter(Boolean).join(' · '))}</span>
+      </button></li>`,
+      )
+      .join('')}</ul>` : '<p class="muted">No hay compras guardadas este mes.</p>'}`;
+  for (const b of gBody.querySelectorAll('.purchase-row')) b.onclick = () => {
+    gv = { ...gv, mode: 'purchase', id: b.dataset.id };
+    renderGastos();
+  };
+}
+
+function renderPurchase() {
+  const p = ledger.purchases.find((x) => x.id === gv.id);
+  $('#gastos-back').hidden = false;
+  $('#gastos-title').textContent = `Compra del ${dayLabel(p.day)}`;
+  const units = p.items.reduce((sum, it) => sum + it.qty, 0);
+  gBody.innerHTML = `
+    <div class="big-total">${esc(formatMoney(p.total))}</div>
+    <p class="sub-line">${esc([cap(dayLabel(p.day)) + ' ' + p.day.slice(0, 4), timeRange(p), plural(p.items.length, 'artículo', 'artículos'), plural(units, 'unidad', 'unidades')].filter(Boolean).join(' · '))}</p>
+    <h3 class="section-title">Lugar</h3>
+    <div class="chips place-chips" id="g-places" role="radiogroup" aria-label="Lugar de compra">${placeChips(p.place)}</div>
+    <h3 class="section-title">Artículos</h3>
+    <ul class="p-items">${p.items
+      .map(
+        (it) => `<li><span class="n">${it.name ? esc(it.name) : 'Artículo sin nombre'}</span><span class="q">${it.qty} × ${esc(formatMoney(it.cents))}</span><span class="s">${esc(formatMoney(it.cents * it.qty))}</span></li>`,
+      )
+      .join('')}</ul>
+    <div class="danger-zone"><button type="button" class="btn danger-ghost" id="g-del">Borrar compra</button></div>`;
+  $('#g-places').onclick = (e) => {
+    const b = e.target.closest('[data-place]');
+    if (!b) return;
+    ledger = setPlace(ledger, p.id, p.place === b.dataset.place ? '' : b.dataset.place);
+    saveLedger();
+    renderGastos();
+  };
+  $('#g-del').onclick = () => {
+    const before = ledger;
+    ledger = deletePurchase(ledger, p.id);
+    saveLedger();
+    gv = { ...gv, mode: 'month', id: null };
+    renderGastos();
+    renderCloseCard();
+    toast(`Borraste la compra de ${formatMoney(p.total)}`, {
+      action: 'Deshacer',
+      onAction: () => {
+        ledger = before;
+        saveLedger();
+        renderCloseCard();
+        if (sheetGastos.open) {
+          gv = { ...gv, mode: 'purchase', id: p.id };
+          renderGastos();
+        }
+      },
+    });
+  };
+}
+
 // ---------- Arranque ----------
 render();
 
@@ -970,19 +1446,30 @@ render();
 function reloadState() {
   list = loadJSON(LIST_KEY, sanitizeList, emptyList);
   hist = loadJSON(HIST_KEY, sanitizeStore, emptyStore);
+  ledger = loadJSON(LEDGER_KEY, sanitizeLedger, emptyLedger);
   wasOver = !!limitState(list)?.over;
   render();
+  renderCloseCard();
   if (el.sheetHistory.open) renderHistory();
+  if (sheetGastos.open) renderGastos();
 }
 window.addEventListener('pageshow', (e) => {
   if (e.persisted) reloadState();
 });
 window.addEventListener('storage', (e) => {
-  if (e.key === LIST_KEY || e.key === HIST_KEY) reloadState();
+  if (e.key === LIST_KEY || e.key === HIST_KEY || e.key === LEDGER_KEY) reloadState();
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') reloadState();
+  if (document.visibilityState === 'visible') {
+    reloadState();
+    rollover();
+  }
 });
+rollover();
+// Si la app queda abierta pasada la medianoche
+setInterval(() => {
+  if (document.visibilityState === 'visible') rollover();
+}, 60_000);
 
 const isNative = !!window.Capacitor?.isNativePlatform?.();
 if ('serviceWorker' in navigator) {
@@ -1002,5 +1489,8 @@ window.__compras = {
   },
   get hist() {
     return hist;
+  },
+  get ledger() {
+    return ledger;
   },
 };

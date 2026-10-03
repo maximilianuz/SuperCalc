@@ -89,15 +89,39 @@ export async function readPrice(src, onStep = () => {}) {
   };
   onStep('Preparando el lector…');
   const worker = await getWorker();
-  const readings = [];
-  for (let i = 0; i < SCALES.length; i++) {
-    onStep(`Leyendo el cartel (${i + 1} de ${SCALES.length})…`);
-    const { canvas, scale } = drawScaled(src, SCALES[i]);
+  const canvases = SCALES.map((side) => {
+    const { canvas, scale } = drawScaled(src, side);
     grayStretch(canvas);
-    const { data } = await worker.recognize(canvas, {}, { blocks: true, text: false });
-    readings.push({ words: flattenWords(data.blocks), scale });
+    return { canvas, scale };
+  });
+  const pass = async (label) => {
+    const readings = [];
+    for (let i = 0; i < canvases.length; i++) {
+      onStep(`${label} (${i + 1} de ${canvases.length})…`);
+      const { data } = await worker.recognize(canvases[i].canvas, {}, { blocks: true, text: false });
+      readings.push({ words: flattenWords(data.blocks), scale: canvases[i].scale });
+    }
+    return readings;
+  };
+  // PSM 11 (texto disperso) es la lectura principal. En carteles donde el precio enorme domina
+  // y hay poco texto chico, Tesseract a veces no segmenta nada con PSM 11: ahí reintentamos con
+  // PSM 6 (un bloque de texto), que en las pruebas sí lo lee.
+  let readings = await pass('Leyendo el cartel');
+  let result = priceFromWords(readings);
+  result.psm = 11;
+  if (!result.candidates.length) {
+    await worker.setParameters({ tessedit_pageseg_mode: '6' });
+    try {
+      readings = await pass('Probando otra lectura');
+      const second = priceFromWords(readings);
+      if (second.candidates.length) {
+        result = second;
+        result.psm = 6;
+      }
+    } finally {
+      await worker.setParameters({ tessedit_pageseg_mode: '11' });
+    }
   }
-  const result = priceFromWords(readings);
   result.readings = readings;
   return result;
 }

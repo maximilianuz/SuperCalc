@@ -131,8 +131,9 @@ test('cuando aparece el c√≥digo, el historial por nombre migra a la clave del c√
   await p.close();
   await page.click('#btn-manual');
   await page.fill('#f-name', 'Mermelada Arcor');
-  const chooser = page.waitForEvent('filechooser');
   await page.click('#btn-item-code');
+  const chooser = page.waitForEvent('filechooser');
+  await page.click('#cam-gallery');
   await (await chooser).setFiles(filePayload('c.png', b64));
   await expect(page.locator('#f-code')).toHaveText(code);
   await page.fill('#f-price', '2200');

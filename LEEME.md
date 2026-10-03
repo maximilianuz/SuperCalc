@@ -31,19 +31,32 @@ La primera vez Android te va a frenar. Cuando aparezca el aviso:
 1. Tocá el archivo `Compras-N.apk` → **Instalar**.
 2. Si Play Protect avisa que la app es desconocida, elegí **Instalar de todas formas** (es tu propia app, firmada con una clave de depuración).
 3. Abrila. La primera vez que uses **Foto del precio** o **Código**, Android te va a pedir permiso de **cámara**: aceptalo.
+   Si lo rechazaste, la app te ofrece usar la cámara del sistema; para volver a habilitarlo: Ajustes → Apps → Compras → Permisos → Cámara.
 
 ### Actualizar
-Repetí los pasos 1, 2 y 4. Todos los APK se firman con la misma clave (`signing/debug.keystore`), así que el nuevo se instala **encima** del anterior y conservás la lista y el historial de precios.
+Repetí los pasos 1, 2 y 4. Todos los APK se firman con la misma clave (`signing/debug.keystore`), así que el nuevo se instala **encima** del anterior y conservás la lista, el historial de precios y los gastos.
 
 ## Qué hace
 - Lista con nombre opcional, precio unitario y cantidad (− / +). Total grande y fijo arriba.
   Mismo nombre (o código) y mismo precio → suma cantidad. Quitar con «Deshacer». «Vaciar» con confirmación.
 - Límite de gasto con barra y marca; avisa (vibración + aviso) al pasarte y sigue sumando.
+- **Cámara dentro de la app**: al tocar **Código** se abre el visor y el código se lee solo, sin sacar foto.
+  En **Foto del precio** apuntás al cartel y tocás el disparador (si el cartel tiene código, también lo toma).
+  Botón **Galería** para elegir una foto guardada. Si no hay permiso de cámara, usa la cámara del sistema.
 - **Foto del precio**: lee el cartel y te propone precios para tocar. Nunca agrega nada sin que confirmes.
   Detecta precios que no son el final (mayorista, promo, cuotas, por kg, sin impuestos, precio anterior)
   y los marca «A confirmar» (esos no entran al historial hasta que confirmes que son el precio final).
 - **Código**: lee EAN-13 / EAN-8 / UPC-A de una foto (también de la misma foto del precio).
 - **Historial de precios** por producto, con gráfico, subas/bajas, actualizar y borrar con «Deshacer».
+- **Terminar compra**: guarda la lista en **Gastos** con el lugar (Supermercado, Almacén/minimercado, Kiosco,
+  Verdulería/carnicería u Otro) y la deja vacía. «Vaciar» en cambio descarta sin guardar.
+- **Día de compra automático**: cada artículo guarda la hora en que lo agregaste. Si entre dos artículos pasan
+  más de 2 horas se toman como compras distintas (súper a la mañana, kiosco a la tarde). Si abrís la app otro día
+  con artículos de un día anterior, esa compra se guarda sola en Gastos con su fecha (con «Deshacer»).
+- **Cierre mensual**: al cambiar el mes, el anterior se cierra y aparece un resumen: total, cantidad de compras
+  y variación contra el mes previo.
+- **Gastos (historial anual)**: total del año, promedio por mes, barras por mes, detalle de cada mes por lugar
+  y por compra (artículos, cambiar el lugar, borrar con «Deshacer»).
 
 ## Para desarrollo (computadora)
 ```bash

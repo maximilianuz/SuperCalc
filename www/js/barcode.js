@@ -52,14 +52,26 @@ function tryDecode(Z, reader, hints, canvas) {
   return null;
 }
 
+function makeReader(Z, tryHarder) {
+  const hints = new Map();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A]);
+  if (tryHarder) hints.set(Z.DecodeHintType.TRY_HARDER, true);
+  // Lector 1D directo: solo EAN/UPC (MultiFormatReader prueba también QR, Aztec, etc.)
+  return { reader: new Z.MultiFormatOneDReader(hints), hints };
+}
+
+let quick = null;
+// Lectura rápida de un cuadro de la cámara en vivo (una escala, sin girar).
+export async function readBarcodeFrame(canvas) {
+  const Z = await loadZXing();
+  if (!quick) quick = makeReader(Z, false);
+  return tryDecode(Z, quick.reader, quick.hints, withMargin(canvas));
+}
+
 // Devuelve el código normalizado (EAN-13 u 8 dígitos) o null.
 export async function readBarcode(src) {
   const Z = await loadZXing();
-  const hints = new Map();
-  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A]);
-  hints.set(Z.DecodeHintType.TRY_HARDER, true);
-  // Lector 1D directo: solo EAN/UPC (MultiFormatReader prueba también QR, Aztec, etc.)
-  const reader = new Z.MultiFormatOneDReader(hints);
+  const { reader, hints } = makeReader(Z, true);
   const w = src.naturalWidth || src.width;
   const h = src.naturalHeight || src.height;
   const sides = LONG_SIDES.filter((s, i) => i === 0 || s < Math.max(w, h));

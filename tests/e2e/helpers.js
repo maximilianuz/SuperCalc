@@ -136,3 +136,36 @@ export async function reloadSettled(page) {
   await page.waitForTimeout(50);
   await page.reload();
 }
+
+// Cámara simulada: getUserMedia devuelve el stream de un canvas donde se dibuja la imagen que elijamos.
+export async function fakeCamera(page) {
+  await page.addInitScript(() => {
+    const c = document.createElement('canvas');
+    c.width = 1280;
+    c.height = 960;
+    const ctx = c.getContext('2d');
+    let img = null;
+    const draw = () => {
+      if (img) ctx.drawImage(img, 0, 0, c.width, c.height);
+      else {
+        ctx.fillStyle = '#777';
+        ctx.fillRect(0, 0, c.width, c.height);
+      }
+      requestAnimationFrame(draw);
+    };
+    window.__setFakeCam = async (b64) => {
+      const i = new Image();
+      i.src = `data:image/png;base64,${b64}`;
+      await i.decode();
+      img = i;
+    };
+    window.__camCalls = 0;
+    navigator.mediaDevices.getUserMedia = async (constraints) => {
+      window.__camCalls++;
+      window.__camConstraints = constraints;
+      if (window.__camDeny) throw new DOMException('denegado', 'NotAllowedError');
+      draw();
+      return c.captureStream(20);
+    };
+  });
+}

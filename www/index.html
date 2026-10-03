@@ -19,6 +19,9 @@
       <header class="topbar">
         <h1 class="brand">Compras</h1>
         <div class="top-actions">
+          <button id="btn-gastos" class="icon-btn" type="button" aria-label="Gastos por mes y año" title="Gastos">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2.5" /><path d="M4 9.5h16M8.5 3v4M15.5 3v4" /><path d="M8 13.5h2M14 13.5h2M8 16.5h2" /></svg>
+          </button>
           <button id="btn-history" class="icon-btn" type="button" aria-label="Historial de precios" title="Historial de precios">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-5 4 4 8-8" /><path d="M14 8h6v6" /></svg>
           </button>
@@ -45,9 +48,16 @@
       </section>
 
       <main class="main">
+        <section class="close-card" id="close-card" hidden aria-live="polite"></section>
         <div class="list-head" id="list-head" hidden>
           <h2>Lista</h2>
-          <button id="btn-clear" class="text-btn" type="button">Vaciar</button>
+          <div class="list-actions">
+            <button id="btn-clear" class="text-btn" type="button">Vaciar</button>
+            <button id="btn-finish" class="btn small secondary" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+              Terminar compra
+            </button>
+          </div>
         </div>
         <ul id="list" class="list" aria-label="Artículos"></ul>
         <div id="empty" class="empty">
@@ -77,6 +87,7 @@
 
     <input id="file-photo" type="file" accept="image/*" capture="environment" hidden />
     <input id="file-code" type="file" accept="image/*" capture="environment" hidden />
+    <input id="file-gallery" type="file" accept="image/*" hidden />
 
     <!-- Hoja: agregar / editar artículo -->
     <dialog id="sheet-item" class="sheet" aria-labelledby="item-title">
@@ -209,6 +220,76 @@
           </button>
         </header>
         <div class="sheet-scroll" id="hist-body"></div>
+      </div>
+    </dialog>
+
+    <!-- Terminar compra -->
+    <dialog id="sheet-finish" class="sheet" aria-labelledby="finish-title">
+      <form id="finish-form" class="sheet-inner" method="dialog" novalidate>
+        <div class="grabber" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <h2 id="finish-title">Terminar compra</h2>
+          <button type="button" class="icon-btn" data-close aria-label="Cerrar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </header>
+        <div class="sheet-scroll">
+          <div class="finish-total" id="finish-total"></div>
+          <ul class="trips" id="finish-trips"></ul>
+          <p class="field-label">¿Dónde compraste?</p>
+          <div class="chips place-chips" id="finish-places" role="radiogroup" aria-label="Lugar de compra"></div>
+          <p class="muted small-note">Se guarda en Gastos con la fecha y hora en que agregaste los artículos, y la lista queda vacía.</p>
+        </div>
+        <div class="sheet-actions">
+          <button type="submit" class="btn primary grow" id="btn-finish-save">Guardar en Gastos</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Gastos: cierres mensuales e historial anual -->
+    <dialog id="sheet-gastos" class="sheet tall" aria-labelledby="gastos-title">
+      <div class="sheet-inner">
+        <div class="grabber" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <button type="button" class="icon-btn" id="gastos-back" aria-label="Volver" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+          </button>
+          <h2 id="gastos-title">Gastos</h2>
+          <button type="button" class="icon-btn" data-close aria-label="Cerrar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </header>
+        <div class="sheet-scroll" id="gastos-body"></div>
+      </div>
+    </dialog>
+
+    <!-- Cámara en vivo -->
+    <dialog id="sheet-camera" class="camera" aria-label="Cámara">
+      <div class="cam-inner">
+        <video id="cam-video" playsinline muted autoplay></video>
+        <div class="cam-frame" id="cam-frame" aria-hidden="true"></div>
+        <header class="cam-top">
+          <button type="button" class="cam-btn" data-close aria-label="Cerrar cámara">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+          <p class="cam-hint" id="cam-hint">Apuntá al cartel del precio</p>
+          <button type="button" class="cam-btn" id="cam-torch" aria-label="Linterna" aria-pressed="false" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 6h3l-7 12 1-8H8z" /></svg>
+          </button>
+        </header>
+        <p class="cam-status" id="cam-status" hidden role="status"></p>
+        <div class="cam-error" id="cam-error" hidden role="alert">
+          <p id="cam-error-text"></p>
+          <button type="button" class="btn primary" id="cam-fallback">Usar la cámara del sistema</button>
+        </div>
+        <footer class="cam-bottom">
+          <button type="button" class="cam-side" id="cam-gallery">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2.5" /><path d="M4 16l4.5-4.5 3.5 3.5 2.5-2.5L20 18" /><circle cx="15.5" cy="9.5" r="1.5" /></svg>
+            <span>Galería</span>
+          </button>
+          <button type="button" class="shutter" id="cam-shutter" aria-label="Sacar foto"></button>
+          <span class="cam-side" aria-hidden="true"></span>
+        </footer>
       </div>
     </dialog>
 

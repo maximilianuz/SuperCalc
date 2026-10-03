@@ -89,8 +89,9 @@ test('«Escanear código» desde la hoja no pierde lo cargado', async ({ page, c
   const p = await painter(context);
   const b64 = await renderBarcodePhoto(p, await barcodePNG('ean13', EAN13, 3));
   await p.close();
-  const chooser = page.waitForEvent('filechooser');
   await page.click('#btn-item-code');
+  const chooser = page.waitForEvent('filechooser');
+  await page.click('#cam-gallery');
   await (await chooser).setFiles(filePayload('c.png', b64));
   await expect(page.locator('#item-busy')).toBeHidden({ timeout: 60_000 });
   await expect(page.locator('#f-code')).toHaveText(EAN13);

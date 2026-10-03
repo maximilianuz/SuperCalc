@@ -175,3 +175,26 @@ test('lectura defensiva del historial', () => {
     { c: 100, t: 5, s: 9 },
   ]);
 });
+
+test('producto que más subió en un período', async () => {
+  const { topRiser } = await import('../../www/js/history.js');
+  const D = 86_400_000;
+  const t0 = new Date(2026, 8, 1).getTime();
+  const t1 = new Date(2026, 9, 1).getTime();
+  const pt = (c, t) => ({ c, t, s: t });
+  const store = {
+    v: 1,
+    products: {
+      a: { key: 'a', name: 'Yerba', code: '', points: [pt(392800, t0 - 10 * D), pt(410000, t0 + 3 * D), pt(425000, t0 + 20 * D)] },
+      b: { key: 'b', name: 'Leche', code: '', points: [pt(100000, t0 - 5 * D), pt(130000, t0 + 2 * D), pt(90000, t1 + 2 * D)] },
+      c: { key: 'c', name: 'Nuevo', code: '', points: [pt(500000, t0 + 1 * D)] },
+      d: { key: 'd', name: 'Bajó', code: '', points: [pt(200000, t0 - 1 * D), pt(150000, t0 + 1 * D)] },
+    },
+  };
+  const r = topRiser(store, t0, t1);
+  assert.equal(r.name, 'Leche');
+  assert.equal(r.from, 100000);
+  assert.equal(r.to, 130000);
+  assert.ok(Math.abs(r.pct - 30) < 1e-9);
+  assert.equal(topRiser({ v: 1, products: { d: store.products.d } }, t0, t1), null);
+});

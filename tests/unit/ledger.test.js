@@ -151,3 +151,16 @@ test('CSV del mes: una fila por compra, montos con punto, comillas y acentos', a
   assert.equal(lines[1], '2026-09-02,18:00,,Kiosco,900.50,ARS,1,Alfajor x1');
   assert.equal(lines[2], '2026-09-06,10:05,"Coto, Palermo",Supermercado,6450.00,ARS,3,"Yerba ""Playadito"" x1; Leche x2"');
 });
+
+test('gasto del mes por lugar: agrupa sin importar mayúsculas y usa el tipo si no hay lugar', async () => {
+  const { placeBreakdown } = await import('../../www/js/ledger.js');
+  let L = archiveItems(emptyLedger(), [item('a', 100000, 1, at([9, 1]))], { place: 'super', placeName: 'Coto Palermo', now: at([9, 1]) }).ledger;
+  L = archiveItems(L, [item('b', 50000, 1, at([9, 8]))], { place: 'super', placeName: 'coto palermo', now: at([9, 8]) }).ledger;
+  L = archiveItems(L, [item('c', 9000, 1, at([9, 9]))], { place: 'kiosco', now: at([9, 9]) }).ledger;
+  L = archiveItems(L, [item('d', 7000, 1, at([9, 10]))], { now: at([9, 10]) }).ledger;
+  L = archiveItems(L, [item('e', 1, 1, at([10, 1]))], { placeName: 'Otro mes', now: at([10, 1]) }).ledger;
+  assert.deepEqual(
+    placeBreakdown(L, '2026-09').map((x) => [x.name.toLowerCase(), x.total, x.count]),
+    [['coto palermo', 150000, 2], ['kiosco', 9000, 1], ['sin especificar', 7000, 1]],
+  );
+});

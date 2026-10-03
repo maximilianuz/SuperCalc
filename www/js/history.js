@@ -214,3 +214,19 @@ export function deleteProduct(store, key) {
 export function findByCode(store, code) {
   return (code && store.products[productKey({ code })]) || null;
 }
+
+// Producto que más subió entre [start, end): compara el precio anterior al período con el último del período.
+export function topRiser(store, start, end) {
+  let best = null;
+  for (const p of Object.values(store.products)) {
+    const first = p.points.findIndex((pt) => pt.t >= start && pt.t < end);
+    if (first < 1) continue;
+    let last = first;
+    while (last + 1 < p.points.length && p.points[last + 1].t < end) last++;
+    const from = p.points[first - 1].c;
+    const to = p.points[last].c;
+    const pct = pctChange(from, to);
+    if (pct > 0 && (!best || pct > best.pct)) best = { name: p.name, code: p.code, from, to, pct };
+  }
+  return best;
+}

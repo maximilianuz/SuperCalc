@@ -25,6 +25,7 @@ import {
   knownPlaces,
   placeTypeFor,
   monthCSV,
+  placeBreakdown,
   PLACES,
   PLACE_LABEL,
 } from './ledger.js';
@@ -45,6 +46,7 @@ import {
   normalizeName,
   productKey,
   pctChange,
+  topRiser,
 } from './history.js';
 
 const LIST_KEY = 'compras.lista.v1';
@@ -95,13 +97,14 @@ function fmtRange(a, b) {
 
 const el = {
   card: $('#total-card'),
+  label: $('#total-label'),
+  limitBtn: $('#btn-limit'),
   amount: $('#total-amount'),
   meta: $('#total-meta'),
   limitBox: $('#limit-box'),
   limitFill: $('#limit-fill'),
   limitMark: $('#limit-mark'),
   limitText: $('#limit-text'),
-  limitOf: $('#limit-of'),
   list: $('#list'),
   listHead: $('#list-head'),
   empty: $('#empty'),
@@ -278,17 +281,22 @@ function render() {
   el.amount.textContent = formatMoney(t.cents);
   el.meta.textContent = t.count ? `${plural(t.count, 'artículo', 'artículos')} · ${plural(t.units, 'unidad', 'unidades')}` : 'Sin artículos';
 
+  // Con límite, lo grande es cuánto queda (lo que importa en la góndola); el total pasa a segundo plano.
   const ls = limitState(list);
   el.limitBox.hidden = !ls;
+  el.limitText.hidden = !ls;
+  el.card.classList.toggle('has-limit', !!ls);
   el.card.classList.toggle('over', !!ls?.over);
+  el.label.textContent = ls ? 'Gastado' : 'Total';
+  el.limitBtn.textContent = ls ? `Límite ${formatMoney(ls.limit).replace(/,00$/, '')}` : 'Poner límite';
   if (ls) {
     const scale = Math.max(ls.limit, ls.total) || 1;
     el.limitFill.style.width = `${Math.min(100, (ls.total / scale) * 100)}%`;
     el.limitMark.style.left = `${(ls.limit / scale) * 100}%`;
     el.limitBox.classList.toggle('near', !ls.over && ls.total >= ls.limit * 0.9);
-    el.limitText.textContent = ls.over ? `Te pasaste por ${formatMoney(ls.excess)}` : `Te quedan ${formatMoney(ls.remaining)}`;
-    el.limitOf.textContent = `Límite ${formatMoney(ls.limit)}`;
+    el.limitText.innerHTML = `<span class="lt-kicker">${ls.over ? 'Te pasaste por' : 'Te quedan'}</span> <span class="lt-amount">${esc(formatMoney(ls.over ? ls.excess : ls.remaining))}</span>`;
   }
+  renderCamTotal();
 
   el.empty.hidden = list.items.length > 0;
   el.listHead.hidden = list.items.length === 0;
@@ -304,18 +312,16 @@ function trendTag(cmp) {
 function itemHTML(it) {
   const name = it.name ? esc(it.name) : 'Artículo sin nombre';
   const pend = it.pending ? '<span class="tag warn">A confirmar</span>' : '';
+  const each = it.qty > 1 ? `<span class="item-each">${it.qty} × ${esc(formatMoney(it.cents))}</span>` : '';
   return `<li class="item" data-id="${esc(it.id)}">
     <button type="button" class="item-main" data-act="edit" aria-label="Editar ${name}">
       <div class="item-name${it.name ? '' : ' unnamed'}">${name}</div>
-      <div class="item-sub"><span>${esc(formatMoney(it.cents))} c/u</span>${trendTag(it.cmp)}${pend}</div>
+      <div class="item-sub"><b class="item-total">${esc(formatMoney(it.cents * it.qty))}</b>${each}${trendTag(it.cmp)}${pend}</div>
     </button>
-    <div class="item-side">
-      <span class="item-total">${esc(formatMoney(it.cents * it.qty))}</span>
-      <div class="stepper">
-        <button type="button" class="step" data-act="minus" aria-label="Restar uno">−</button>
-        <output>${it.qty}</output>
-        <button type="button" class="step" data-act="plus" aria-label="Sumar uno">+</button>
-      </div>
+    <div class="stepper">
+      <button type="button" class="step" data-act="minus" aria-label="Restar uno">−</button>
+      <output>${it.qty}</output>
+      <button type="button" class="step" data-act="plus" aria-label="Sumar uno">+</button>
     </div>
   </li>`;
 }
@@ -391,7 +397,8 @@ $('#btn-clear').addEventListener('click', async () => {
 });
 
 // Total fijo: se marca cuando queda pegado arriba
-const onScroll = () => el.card.classList.toggle('stuck', el.card.getBoundingClientRect().top <= 0.5 && window.scrollY > 0);
+const onScroll = () =>
+  el.card.classList.toggle('stuck', window.scrollY > 0 && el.card.getBoundingClientRect().top <= parseFloat(getComputedStyle(el.card).top) + 0.5);
 window.addEventListener('scroll', onScroll, { passive: true });
 
 // ---------- Límite ----------
@@ -568,20 +575,13 @@ function saveDraft() {
   const pending = draft.pending && draft.pending.length ? [...draft.pending] : null;
   const now = Date.now();
 
-  const record = (base) => {
-    if (pending || !productKey({ name, code })) return { base, cmp: null, rec: null };
-    const cmp = comparePrice(base, { name, code, cents });
-    const r = recordPrice(base, { name, code, cents, now });
-    return { base: r.store, cmp, rec: r.rec };
-  };
-
   if (draft.mode === 'edit') {
     const it = list.items.find((x) => x.id === draft.id);
     if (!it) return el.sheetItem.close();
     const changed =
       it.cents !== cents || normalizeName(it.name) !== normalizeName(name) || it.code !== code || !!it.pending !== !!pending;
     if (changed) {
-      const r = record(it.rec ? revertRecord(hist, it.rec) : hist);
+      const r = recordFor(it.rec ? revertRecord(hist, it.rec) : hist, { name, code, cents, pending, now });
       hist = r.base;
       it.cmp = r.cmp;
       it.rec = r.rec;
@@ -593,6 +593,21 @@ function saveDraft() {
     return;
   }
 
+  el.sheetItem.close();
+  const { item, merged } = addItem({ name, code, cents, qty, pending });
+  if (merged) toast(`Sumamos ${qty} a «${item.name || 'Artículo sin nombre'}» (ahora ${item.qty})`);
+}
+
+function recordFor(base, { name, code, cents, pending, now }) {
+  if (pending || !productKey({ name, code })) return { base, cmp: null, rec: null };
+  const cmp = comparePrice(base, { name, code, cents });
+  const r = recordPrice(base, { name, code, cents, now });
+  return { base: r.store, cmp, rec: r.rec };
+}
+
+// Agrega a la lista (o suma cantidad si ya está con el mismo precio) y guarda el precio en el historial.
+function addItem({ name, code, cents, qty, pending }) {
+  const now = Date.now();
   const same = findSame(list, { name, code, cents });
   if (same) {
     same.qty = Math.min(9999, same.qty + qty);
@@ -600,7 +615,7 @@ function saveDraft() {
     if (!same.name && name) same.name = name;
     if (same.pending && !pending) {
       same.pending = null;
-      const r = record(hist);
+      const r = recordFor(hist, { name, code, cents, pending, now });
       hist = r.base;
       same.cmp = r.cmp;
       same.rec = r.rec;
@@ -608,18 +623,16 @@ function saveDraft() {
       hist = recordPrice(hist, { name: same.name, code: same.code, cents, now }).store;
     }
     saveHist();
-    el.sheetItem.close();
     commit();
-    toast(`Sumamos ${qty} a «${same.name || 'Artículo sin nombre'}» (ahora ${same.qty})`);
-    return;
+    return { item: same, merged: true };
   }
-
-  const r = record(hist);
+  const r = recordFor(hist, { name, code, cents, pending, now });
   hist = r.base;
-  list.items.unshift({ id: newId(), name, code, cents, qty, pending, cmp: r.cmp, rec: r.rec, addedAt: now });
+  const item = { id: newId(), name, code, cents, qty, pending, cmp: r.cmp, rec: r.rec, addedAt: now };
+  list.items.unshift(item);
   saveHist();
-  el.sheetItem.close();
   commit();
+  return { item, merged: false };
 }
 
 // ---------- Foto del precio y código de barras ----------
@@ -632,9 +645,8 @@ function pickFile(input, kind, keep) {
   input.click();
 }
 
-$('#btn-photo').addEventListener('click', () => openCamera('photo', false));
+$('#btn-scan').addEventListener('click', () => openCamera('scan', false));
 $('#btn-item-photo').addEventListener('click', () => openCamera('photo', true));
-$('#btn-code').addEventListener('click', () => openCamera('code', false));
 $('#btn-item-code').addEventListener('click', () => openCamera('code', true));
 $('#btn-manual').addEventListener('click', () => {
   openItemSheet({ mode: 'add' });
@@ -776,7 +788,7 @@ async function processCode(getImg, keep) {
 }
 
 // ---------- Cámara en vivo ----------
-const cam = { mode: 'photo', keep: false, stream: null, loop: 0, code: null };
+const cam = { mode: 'photo', keep: false, stream: null, loop: 0, code: null, readSeq: 0 };
 const camEl = {
   dlg: $('#sheet-camera'),
   video: $('#cam-video'),
@@ -787,16 +799,28 @@ const camEl = {
   errorText: $('#cam-error-text'),
   shutter: $('#cam-shutter'),
   torch: $('#cam-torch'),
+  total: $('#cam-total'),
+  card: $('#cam-card'),
+  bottom: $('#sheet-camera .cam-bottom'),
+};
+const buzz = (p) => {
+  try {
+    navigator.vibrate?.(p);
+  } catch {}
 };
 
 function openCamera(mode, keep) {
-  if (!cameraSupported()) return pickFile(mode === 'code' ? el.fileCode : el.filePhoto, mode, keep);
+  if (!cameraSupported()) return pickFile(mode === 'code' ? el.fileCode : el.filePhoto, mode === 'code' ? 'code' : 'photo', keep);
   cam.mode = mode;
   cam.keep = keep;
   cam.code = null;
   camEl.dlg.classList.toggle('code', mode === 'code');
-  camEl.hint.textContent = mode === 'code' ? 'Apuntá al código de barras' : 'Apuntá al cartel del precio';
-  camEl.shutter.setAttribute('aria-label', mode === 'code' ? 'Sacar foto del código' : 'Sacar foto del precio');
+  camEl.dlg.classList.toggle('scan', mode === 'scan');
+  camEl.hint.textContent = { code: 'Apuntá al código de barras', scan: 'Apuntá al código o al precio' }[mode] || 'Apuntá al cartel del precio';
+  camEl.shutter.setAttribute('aria-label', { code: 'Sacar foto del código', scan: 'Leer el precio del cartel' }[mode] || 'Sacar foto del precio');
+  sc = scIdle();
+  renderScanCard();
+  camEl.total.hidden = mode !== 'scan';
   camEl.status.hidden = true;
   camEl.error.hidden = true;
   camEl.frame.classList.remove('found');
@@ -804,6 +828,7 @@ function openCamera(mode, keep) {
   camEl.torch.hidden = true;
   camEl.torch.setAttribute('aria-pressed', 'false');
   openDialog(camEl.dlg);
+  renderCamTotal();
   const id = ++cam.loop;
   startCamera(camEl.video)
     .then((stream) => {
@@ -823,6 +848,9 @@ function openCamera(mode, keep) {
 
 camEl.dlg.addEventListener('close', () => {
   cam.loop++;
+  cam.readSeq++;
+  sc = scIdle();
+  renderScanCard();
   stopCamera(cam.stream, camEl.video);
   cam.stream = null;
 });
@@ -830,6 +858,11 @@ camEl.dlg.addEventListener('close', () => {
 async function scanLoop(id) {
   const { readBarcodeFrame } = await import('./barcode.js');
   while (id === cam.loop && camEl.dlg.open) {
+    // Con la tarjeta de un producto a la vista no seguimos buscando: la persona está decidiendo.
+    if (cam.mode === 'scan' && sc.phase !== 'idle') {
+      await new Promise((r) => setTimeout(r, 220));
+      continue;
+    }
     const frame = grabFrame(camEl.video, 1000);
     let code = null;
     if (frame) {
@@ -838,10 +871,9 @@ async function scanLoop(id) {
       } catch {}
     }
     if (id !== cam.loop) return;
-    if (code) {
-      try {
-        navigator.vibrate?.(40);
-      } catch {}
+    if (code && cam.mode === 'scan') onScanCode(code);
+    else if (code) {
+      buzz(40);
       if (cam.mode === 'code') {
         const keep = cam.keep;
         camEl.dlg.close();
@@ -861,6 +893,7 @@ async function scanLoop(id) {
 }
 
 camEl.shutter.addEventListener('click', () => {
+  if (cam.mode === 'scan') return readScanPrice();
   const frame = grabFrame(camEl.video, 2000);
   if (!frame) return;
   const { mode, keep, code } = cam;
@@ -871,12 +904,14 @@ camEl.shutter.addEventListener('click', () => {
 });
 
 $('#cam-gallery').addEventListener('click', () => {
-  const { mode, keep } = cam;
+  const { keep } = cam;
+  const mode = cam.mode === 'code' ? 'code' : 'photo';
   camEl.dlg.close();
   pickFile(el.fileGallery, mode, keep);
 });
 $('#cam-fallback').addEventListener('click', () => {
-  const { mode, keep } = cam;
+  const { keep } = cam;
+  const mode = cam.mode === 'code' ? 'code' : 'photo';
   camEl.dlg.close();
   pickFile(mode === 'code' ? el.fileCode : el.filePhoto, mode, keep);
 });
@@ -884,6 +919,184 @@ camEl.torch.addEventListener('click', async () => {
   const on = camEl.torch.getAttribute('aria-pressed') !== 'true';
   if (await setTorch(cam.stream, on)) camEl.torch.setAttribute('aria-pressed', String(on));
 });
+
+// ---------- Escaneo continuo: la cámara queda abierta y cada producto se agrega desde una tarjeta ----------
+// Fases: idle (buscando) · known (código con precio guardado) · unknown (código nuevo) ·
+// reading (OCR del cartel) · price (precio leído) · noprice (no se encontró precio).
+const scIdle = () => ({ phase: 'idle' });
+let sc = scIdle();
+let scIgnore = { code: null, until: 0 }; // tras agregar o descartar, el mismo código no reaparece enseguida
+
+function renderCamTotal() {
+  if (!camEl.dlg.open || cam.mode !== 'scan') return;
+  const t = totals(list);
+  camEl.total.textContent = t.count ? `${formatMoney(t.cents)} · ${plural(t.count, 'artículo', 'artículos')}` : 'Lista vacía';
+}
+
+function onScanCode(code) {
+  if (code === scIgnore.code && Date.now() < scIgnore.until) return;
+  buzz(40);
+  const product = findByCode(hist, code);
+  const last = product && product.points[product.points.length - 1];
+  sc = { phase: last ? 'known' : 'unknown', code, product, cents: last ? last.c : 0, since: last ? last.s : 0, pending: null, qty: 1, res: null, cands: [], sel: -1 };
+  renderScanCard();
+}
+
+function pickScanCand(i) {
+  const c = sc.cands[i];
+  if (!c) return;
+  sc.sel = i;
+  sc.cents = c.cents;
+  sc.pending = c.own.length ? [...c.own] : null;
+}
+
+async function readScanPrice() {
+  const frame = grabFrame(camEl.video, 2000);
+  if (!frame) return;
+  const seq = ++cam.readSeq;
+  const alive = () => seq === cam.readSeq && camEl.dlg.open;
+  sc = { ...scIdle(), code: null, product: null, qty: 1, ...sc, phase: 'reading', pending: null, res: null, cands: [], sel: -1 };
+  renderScanCard();
+  try {
+    const mods = await loadMods();
+    if (!sc.code) {
+      let code = null;
+      try {
+        code = await mods.readBarcode(frame);
+      } catch {}
+      if (!alive()) return;
+      if (code) sc = { ...sc, code, product: findByCode(hist, code) };
+    }
+    const res = await mods.readPrice(frame);
+    if (!alive()) return;
+    const cands = res.candidates.slice(0, 5);
+    sc = { ...sc, res, cands, phase: cands.length ? 'price' : 'noprice' };
+    if (cands.length) pickScanCand(Math.max(0, cands.findIndex((c) => c.suggested)));
+  } catch (err) {
+    console.error(err);
+    if (!alive()) return;
+    sc = { ...sc, phase: 'noprice' };
+  }
+  renderScanCard();
+}
+
+function scanTrend() {
+  if (sc.pending) return `<p class="cc-trend warn">A confirmar · ${esc(sc.pending.map((id) => SHORT_RULE[id] || id).join(', '))}</p>`;
+  const name = sc.product?.name || '';
+  const code = sc.code || '';
+  if (!productKey({ name, code })) return '';
+  const cmp = comparePrice(hist, { name, code, cents: sc.cents });
+  if (cmp.kind === 'up' || cmp.kind === 'down') {
+    return `<p class="cc-trend ${cmp.kind}">${cmp.kind === 'up' ? '▲' : '▼'} ${esc(formatPercent(cmp.pct))} · antes ${esc(formatMoney(cmp.prev))} (${esc(relativeTime(cmp.since))})</p>`;
+  }
+  if (cmp.kind === 'same') return `<p class="cc-trend">Igual que la última vez (${esc(relativeTime(cmp.since))})</p>`;
+  return '<p class="cc-trend">Primera vez que lo cargás</p>';
+}
+
+function renderScanCard() {
+  const on = sc.phase !== 'idle';
+  camEl.card.hidden = !on;
+  camEl.bottom.hidden = on;
+  if (!on) {
+    camEl.card.innerHTML = '';
+    return;
+  }
+  const name = sc.product?.name || '';
+  const title = name || (sc.code ? 'Producto nuevo' : 'Precio del cartel');
+  const codeTxt = sc.code ? `Código ${sc.code}` : '';
+  const stepper = `<div class="stepper"><button type="button" class="step" data-act="minus" aria-label="Restar uno">−</button><output>${sc.qty}</output><button type="button" class="step" data-act="plus" aria-label="Sumar uno">+</button></div>`;
+  const add = `<button type="button" class="btn primary grow" data-act="add">Añadir · ${esc(formatMoney(sc.cents * sc.qty))}</button>`;
+  const write = (cls = 'small secondary') => `<button type="button" class="btn ${cls}" data-act="write">Escribir</button>`;
+  let sub = codeTxt;
+  let body = '';
+  let actions = '';
+  if (sc.phase === 'known') {
+    sub = [codeTxt, `último precio ${relativeTime(sc.since)}`].filter(Boolean).join(' · ');
+    body = `<p class="cc-price">${esc(formatMoney(sc.cents))}</p>
+      <div class="cc-alt"><span>¿Cambió el precio?</span><button type="button" class="btn small secondary" data-act="read">Leer del cartel</button>${write()}</div>`;
+    actions = stepper + add;
+  } else if (sc.phase === 'unknown') {
+    body = '<p class="cc-text">Es la primera vez que lo escaneás. Leé el precio del cartel para agregarlo.</p>';
+    actions = `${write('secondary')}<button type="button" class="btn primary grow" data-act="read">Leer precio</button>`;
+  } else if (sc.phase === 'reading') {
+    body = '<div class="busy" role="status"><span class="spinner" aria-hidden="true"></span><span>Leyendo el precio…</span></div>';
+  } else if (sc.phase === 'noprice') {
+    body = '<p class="cc-text">No encontramos el precio. Acercate al cartel o escribilo.</p>';
+    actions = `${write('secondary')}<button type="button" class="btn primary grow" data-act="read">Reintentar</button>`;
+  } else if (sc.phase === 'price') {
+    const others = sc.cands
+      .map((c, i) => ({ c, i }))
+      .filter(({ i }) => i !== sc.sel)
+      .map(({ c, i }) => {
+        const note = c.own.length ? c.own.map((id) => SHORT_RULE[id] || id).join(', ') : '';
+        return `<button type="button" class="chip cc-chip" data-act="pick" data-i="${i}"><b>${esc(formatMoney(c.cents))}</b>${note ? `<small>${esc(note)}</small>` : ''}</button>`;
+      })
+      .join('');
+    body = `<p class="cc-price">${esc(formatMoney(sc.cents))}</p>${scanTrend()}
+      <div class="cc-alt">${others ? '<span>¿Otro precio?</span>' : ''}${others}${write()}</div>`;
+    actions = stepper + add;
+  }
+  camEl.card.innerHTML = `
+    <div class="cc-head">
+      <div class="cc-id"><p class="cc-name">${esc(title)}</p>${sub ? `<p class="cc-sub">${esc(sub)}</p>` : ''}</div>
+      <button type="button" class="icon-btn cc-x" data-act="dismiss" aria-label="Descartar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
+    </div>
+    ${body}
+    ${actions ? `<div class="cc-actions">${actions}</div>` : ''}`;
+}
+
+camEl.card.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const act = b.dataset.act;
+  if (act === 'read') return readScanPrice();
+  if (act === 'write') return scanToSheet();
+  if (act === 'add') return scanAdd();
+  if (act === 'dismiss') {
+    scIgnore = { code: sc.code, until: Date.now() + 2500 };
+    cam.readSeq++;
+    sc = scIdle();
+  } else if (act === 'minus') sc.qty = Math.max(1, sc.qty - 1);
+  else if (act === 'plus') sc.qty = Math.min(9999, sc.qty + 1);
+  else if (act === 'pick') pickScanCand(Number(b.dataset.i));
+  renderScanCard();
+});
+
+function scanAdd() {
+  if (!sc.cents) return;
+  const before = { items: JSON.parse(JSON.stringify(list.items)), hist };
+  const spent = sc.cents * sc.qty;
+  const { item } = addItem({ name: sc.product?.name || '', code: sc.code || '', cents: sc.cents, qty: sc.qty, pending: sc.pending });
+  scIgnore = { code: sc.code, until: Date.now() + 3000 };
+  sc = scIdle();
+  renderScanCard();
+  toast(`Añadiste «${item.name || 'Artículo sin nombre'}» · ${formatMoney(spent)}`, {
+    action: 'Deshacer',
+    onAction: () => {
+      list.items = before.items;
+      hist = before.hist;
+      saveHist();
+      commit();
+    },
+  });
+}
+
+// «Escribir»: pasa lo leído a la hoja de siempre (nombre, código, precios detectados) y cierra la cámara.
+function scanToSheet() {
+  const { code, res, cents, pending, qty, phase } = sc;
+  camEl.dlg.close();
+  openItemSheet({ mode: 'add' });
+  draft.qty = qty || 1;
+  if (code) applyCode(code);
+  if (res && res.candidates.length) showCandidates(res, code);
+  if (cents && (phase === 'price' || phase === 'known')) {
+    el.price.value = centsToInput(cents);
+    draft.picked = cents;
+    draft.pending = pending ? [...pending] : null;
+  }
+  syncDraftUI();
+  el.price.focus();
+}
 
 // ---------- Historial de precios ----------
 let histView = { mode: 'list', key: null, q: '' };
@@ -1131,12 +1344,15 @@ const pctSpan = (pct, vs) =>
   pct == null ? '' : `<span class="${pct > 0 ? 'up' : pct < 0 ? 'down' : ''}">${pct > 0 ? '▲' : pct < 0 ? '▼' : '='} ${esc(formatPercent(pct))} vs ${esc(vs)}</span>`;
 const monthName = (mk) => monthLabel(mk).split(' ')[0];
 
-// Terminar compra
+// Terminar compra: primero los lugares donde ya compraste (un toque); «Otro lugar» para escribir uno nuevo.
 let finishPlace = '';
+let finishSel = null; // índice de un lugar frecuente, 'other' o null
+let finishKnown = [];
 const sheetFinish = $('#sheet-finish');
+const finishName = $('#finish-place-name');
+const finishSave = $('#btn-finish-save');
 
 let finishPlacePicked = false; // la persona eligió el tipo a mano: no lo pisamos al escribir el lugar
-const finishName = $('#finish-place-name');
 
 function fillKnownPlaces() {
   $('#known-places').innerHTML = knownPlaces(ledger)
@@ -1150,12 +1366,15 @@ $('#btn-finish').addEventListener('click', () => {
   finishPlace = '';
   finishPlacePicked = false;
   finishName.value = '';
+  finishKnown = knownPlaces(ledger).slice(0, 4);
+  finishSel = finishKnown.length ? null : 'other';
   fillKnownPlaces();
   renderFinish();
   openDialog(sheetFinish);
 });
 
 finishName.addEventListener('input', () => {
+  updateFinishSave();
   if (finishPlacePicked) return;
   const t = placeTypeFor(ledger, finishName.value);
   if (t && t !== finishPlace) {
@@ -1170,9 +1389,18 @@ function placeChips(selected) {
   ).join('');
 }
 
+function updateFinishSave() {
+  const name = finishName.value.replace(/\s+/g, ' ').trim();
+  finishSave.textContent = name ? `Guardar en ${name}` : 'Guardar en Gastos';
+}
+
 function renderFinish() {
   const trips = groupTrips(list.items, Date.now());
-  $('#finish-total').textContent = formatMoney(totals(list).cents);
+  const t = totals(list);
+  $('#finish-total').textContent = formatMoney(t.cents);
+  const one = trips.length === 1 ? trips[0] : null;
+  const when = one ? (hhmm(one.start) === hhmm(one.end) ? ` a las ${hhmm(one.start)}` : ` de ${hhmm(one.start)} a ${hhmm(one.end)}`) : '';
+  $('#finish-sub').textContent = `${plural(t.count, 'artículo', 'artículos')}${one ? ` · ${relDay(one.day).toLowerCase()}${when}` : ''}`;
   $('#finish-trips').innerHTML = trips
     .map((g) => {
       const total = g.items.reduce((sum, it) => sum + it.cents * it.qty, 0);
@@ -1181,8 +1409,48 @@ function renderFinish() {
     })
     .join('');
   $('#finish-trips').hidden = trips.length < 2;
-  $('#finish-places').innerHTML = placeChips(finishPlace);
+  renderFinishPlaces();
 }
+
+function renderFinishPlaces() {
+  const known = $('#finish-known');
+  known.hidden = !finishKnown.length;
+  known.innerHTML = finishKnown.length
+    ? finishKnown
+        .map(
+          (k, i) => `<button type="button" class="place-row" role="radio" aria-checked="${finishSel === i}" data-sel="${i}">
+        <span class="pr-name">${esc(k.name)}</span>
+        <span class="pr-sub">${esc(PLACE_LABEL[k.place] || 'Sin tipo')}</span>
+        <span class="pr-count">${plural(k.count, 'compra', 'compras')}</span>
+      </button>`,
+        )
+        .join('') +
+      `<button type="button" class="place-row other" role="radio" aria-checked="${finishSel === 'other'}" data-sel="other">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg><span class="pr-name">Otro lugar</span>
+      </button>`
+    : '';
+  $('#finish-other').hidden = finishSel !== 'other';
+  $('#finish-places').innerHTML = placeChips(finishPlace);
+  updateFinishSave();
+}
+
+$('#finish-known').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-sel]');
+  if (!b) return;
+  const sel = b.dataset.sel === 'other' ? 'other' : Number(b.dataset.sel);
+  if (sel === finishSel && sel !== 'other') finishSel = null;
+  else finishSel = sel;
+  finishPlacePicked = false;
+  if (typeof finishSel === 'number') {
+    finishName.value = finishKnown[finishSel].name;
+    finishPlace = finishKnown[finishSel].place;
+  } else {
+    finishName.value = '';
+    finishPlace = '';
+  }
+  renderFinishPlaces();
+  if (finishSel === 'other') finishName.focus();
+});
 
 $('#finish-places').addEventListener('click', (e) => {
   const b = e.target.closest('[data-place]');
@@ -1259,7 +1527,7 @@ function renderCloseCard() {
     <p class="close-total">${esc(formatMoney(sum.total))}</p>
     <p class="close-meta">${plural(sum.count, 'compra', 'compras')}${sum.pct != null ? ` · ${pctSpan(sum.pct, monthName(prevMonthKey(c.month)))}` : ''}</p>
     <div class="close-actions">
-      <button type="button" class="btn small secondary" data-act="see">Ver el mes</button>
+      <button type="button" class="btn small secondary" data-act="see">Ver resumen</button>
       <button type="button" class="btn small secondary" data-act="export">Exportar CSV</button>
     </div>
     <button type="button" class="icon-btn close-x" data-act="dismiss" aria-label="Cerrar resumen del mes">
@@ -1275,7 +1543,58 @@ closeCard.addEventListener('click', (e) => {
   ledger = markCloseSeen(ledger, mk);
   saveLedger();
   renderCloseCard();
-  if (b.dataset.act === 'see') openGastos({ mode: 'month', year: Number(mk.slice(0, 4)), month: mk });
+  if (b.dataset.act === 'see') openRecap(mk);
+});
+
+// Resumen del mes cerrado: total, comparación, gasto por lugar y el producto que más subió.
+const sheetRecap = $('#sheet-recap');
+let recapMonth = null;
+
+function openRecap(mk) {
+  recapMonth = mk;
+  renderRecap();
+  openDialog(sheetRecap);
+}
+
+function renderRecap() {
+  const mk = recapMonth;
+  const sum = closeSummary(ledger, mk);
+  const places = placeBreakdown(ledger, mk);
+  const max = Math.max(1, ...places.map((x) => x.total));
+  const [y, m] = mk.split('-').map(Number);
+  const riser = topRiser(hist, new Date(y, m - 1, 1).getTime(), new Date(y, m, 1).getTime());
+  const pct =
+    sum.pct == null
+      ? ''
+      : `<span class="tag ${sum.pct > 0 ? 'up' : 'down'}">${sum.pct > 0 ? '▲' : sum.pct < 0 ? '▼' : '='} ${esc(formatPercent(sum.pct))} vs ${esc(monthName(prevMonthKey(mk)))}</span>`;
+  $('#recap-body').innerHTML = `
+    <h2 class="recap-title" id="recap-title">${esc(cap(monthLabel(mk)))}</h2>
+    <p class="recap-total">${esc(formatMoney(sum.total))}</p>
+    <p class="recap-meta">${pct}<span>${plural(sum.count, 'compra', 'compras')}${sum.count > 1 ? ` · promedio ${esc(formatMoney(Math.round(sum.total / sum.count)))}` : ''}</span></p>
+    ${
+      places.length
+        ? `<section class="recap-card"><h3>Por lugar</h3><ul class="recap-places">${places
+            .map(
+              (p, i) =>
+                `<li><span>${esc(p.name)}</span><b>${esc(formatMoney(p.total))}</b><span class="track"><span class="fill${i ? '' : ' top'}" style="width:${((p.total / max) * 100).toFixed(1)}%"></span></span></li>`,
+            )
+            .join('')}</ul></section>`
+        : ''
+    }
+    ${
+      riser
+        ? `<section class="recap-card recap-riser"><span class="riser-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 4 8-8" /><path d="M14 8h6v6" /></svg></span>
+        <div><p class="riser-k">Lo que más subió</p><p class="riser-name">${esc(riser.name || `Código ${riser.code}`)}</p></div>
+        <div class="riser-num"><b>▲ ${esc(formatPercent(riser.pct))}</b><span>${esc(formatMoney(riser.from))} → ${esc(formatMoney(riser.to))}</span></div></section>`
+        : ''
+    }`;
+}
+
+$('#recap-export').addEventListener('click', () => exportMonth(recapMonth));
+$('#recap-see').addEventListener('click', () => {
+  const mk = recapMonth;
+  sheetRecap.close();
+  openGastos({ mode: 'month', year: Number(mk.slice(0, 4)), month: mk });
 });
 
 // Pantalla de gastos
@@ -1549,6 +1868,7 @@ function reloadState() {
   renderCloseCard();
   if (el.sheetHistory.open) renderHistory();
   if (sheetGastos.open) renderGastos();
+  if (sheetRecap.open) renderRecap();
 }
 window.addEventListener('pageshow', (e) => {
   if (e.persisted) reloadState();

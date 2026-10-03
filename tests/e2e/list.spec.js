@@ -54,7 +54,7 @@ test('alta manual, merge de iguales, quitar con Deshacer, persistencia sin red',
   await expect(page.locator('#f-price')).toHaveValue('1400');
   await page.fill('#f-price', '1450');
   await page.click('#btn-item-save');
-  await expect(page.locator('.item').nth(1)).toContainText('$ 1.450,00 c/u');
+  await expect(page.locator('.item').nth(1)).toContainText('$ 1.450,00');
 
   // Persistencia: recargar sin red
   const before = await page.locator('#total-amount').textContent();

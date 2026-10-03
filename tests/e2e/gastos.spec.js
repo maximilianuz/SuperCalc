@@ -73,8 +73,17 @@ test('cambio de día: la compra de ayer se guarda sola; cambio de mes: cierre co
   await expect(card).toContainText('1 compra');
   await expect(card).toContainText('▲ 10,0 % vs agosto');
 
-  // Ver el mes
-  await card.getByRole('button', { name: 'Ver el mes' }).click();
+  // Resumen del mes y, desde ahí, las compras
+  await card.getByRole('button', { name: 'Ver resumen' }).click();
+  const r = page.locator('#sheet-recap');
+  await expect(r).toBeVisible();
+  await expect(page.locator('#recap-title')).toHaveText('Septiembre 2026');
+  await expect(r.locator('.recap-total')).toHaveText('$ 11.000,00');
+  await expect(r).toContainText('▲ 10,0 % vs agosto');
+  await expect(r.locator('.recap-places li')).toHaveCount(1);
+  await expect(r.locator('.recap-places li')).toContainText('Sin especificar');
+  await r.getByRole('button', { name: 'Ver las compras del mes' }).click();
+  await expect(r).toBeHidden();
   const g = page.locator('#sheet-gastos');
   await expect(g).toBeVisible();
   await expect(page.locator('#gastos-title')).toHaveText('Septiembre 2026');
@@ -177,6 +186,7 @@ test('lugar escrito a mano, editable, con tipo recordado y exportación CSV del 
   await reloadSettled(page);
   await addManual(page, { name: 'Arroz', price: '1599,50' });
   await page.click('#btn-finish');
+  await page.locator('#finish-known').getByRole('radio', { name: 'Otro lugar' }).click();
   await page.fill('#finish-place-name', 'coto palermo');
   await expect(page.locator('#finish-places').getByRole('radio', { name: 'Supermercado' })).toHaveAttribute('aria-checked', 'true');
   await page.click('#btn-finish-save');
@@ -220,5 +230,64 @@ test('el resumen de cierre de mes también exporta', async ({ page, context }) =
   await reloadSettled(page);
   const dl = page.waitForEvent('download');
   await page.locator('#close-card').getByRole('button', { name: 'Exportar CSV' }).click();
+  expect((await dl).suggestedFilename()).toBe('compras-2026-09.csv');
+});
+
+test('terminar compra: los lugares donde ya compraste se eligen con un toque', async ({ page, context }) => {
+  await page.clock.setFixedTime(at('2026-09-06T10:05:00'));
+  await openOffline(page, context);
+  await addManual(page, { name: 'Yerba', price: '4250' });
+  await page.click('#btn-finish');
+  await expect(page.locator('#finish-known')).toBeHidden();
+  await page.fill('#finish-place-name', 'Coto Palermo');
+  await page.locator('#finish-places').getByRole('radio', { name: 'Supermercado' }).click();
+  await expect(page.locator('#btn-finish-save')).toHaveText('Guardar en Coto Palermo');
+  await page.click('#btn-finish-save');
+
+  await addManual(page, { name: 'Leche', price: '1100' });
+  await page.click('#btn-finish');
+  await expect(page.locator('#finish-sub')).toHaveText('1 artículo · hoy a las 10:05');
+  await expect(page.locator('#finish-other')).toBeHidden();
+  const row = page.locator('#finish-known').getByRole('radio', { name: /Coto Palermo/ });
+  await expect(row).toContainText('Supermercado');
+  await expect(row).toContainText('1 compra');
+  await expect(page.locator('#btn-finish-save')).toHaveText('Guardar en Gastos');
+  await row.click();
+  await expect(row).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('#btn-finish-save')).toHaveText('Guardar en Coto Palermo');
+  await page.click('#btn-finish-save');
+  const l = await page.evaluate(() => window.__compras.ledger.purchases.map((p) => [p.placeName, p.place, p.total]));
+  expect(l).toContainEqual(['Coto Palermo', 'super', 110000]);
+});
+
+test('resumen del mes: gasto por lugar y el producto que más subió', async ({ page, context }) => {
+  await page.clock.setFixedTime(at('2026-08-10T10:00:00'));
+  await openOffline(page, context);
+  await addManual(page, { name: 'Yerba', price: '3928' });
+  await page.click('#btn-finish');
+  await page.click('#btn-finish-save');
+  await page.clock.setFixedTime(at('2026-09-06T10:00:00'));
+  await reloadSettled(page);
+  await addManual(page, { name: 'Yerba', price: '4250' });
+  await page.click('#btn-finish');
+  await page.fill('#finish-place-name', 'Coto Palermo');
+  await page.click('#btn-finish-save');
+  await addManual(page, { name: 'Alfajor', price: '900' });
+  await page.click('#btn-finish');
+  await page.locator('#finish-known').getByRole('radio', { name: 'Otro lugar' }).click();
+  await page.fill('#finish-place-name', 'Kiosco Juan');
+  await page.click('#btn-finish-save');
+  await page.clock.setFixedTime(at('2026-10-01T09:00:00'));
+  await reloadSettled(page);
+  await page.locator('#close-card').getByRole('button', { name: 'Ver resumen' }).click();
+  const r = page.locator('#sheet-recap');
+  await expect(r.locator('.recap-places li')).toHaveCount(2);
+  await expect(r.locator('.recap-places li').first()).toContainText('Coto Palermo');
+  await expect(r.locator('.recap-places li').first()).toContainText('$ 4.250,00');
+  await expect(r).toContainText('2 compras · promedio $ 2.575,00');
+  await expect(r.locator('.recap-riser')).toContainText('Yerba');
+  await expect(r.locator('.recap-riser')).toContainText('▲ 8,2 %');
+  const dl = page.waitForEvent('download');
+  await r.getByRole('button', { name: 'Exportar CSV' }).click();
   expect((await dl).suggestedFilename()).toBe('compras-2026-09.csv');
 });

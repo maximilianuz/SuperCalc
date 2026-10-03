@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)" />
     <meta name="description" content="Calculá cuánto gastás en el súper mientras agregás artículos." />
     <title>Compras</title>
@@ -25,32 +25,25 @@
           <button id="btn-history" class="icon-btn" type="button" aria-label="Historial de precios" title="Historial de precios">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-5 4 4 8-8" /><path d="M14 8h6v6" /></svg>
           </button>
-          <button id="btn-limit" class="icon-btn" type="button" aria-label="Límite de gasto" title="Límite de gasto">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M12 12l4-3" /><path d="M12 7v1M7 12h1M16.5 12h.5" /></svg>
-          </button>
         </div>
       </header>
 
       <section class="total-card" id="total-card" aria-label="Total">
-        <div class="total-label">Total</div>
+        <div class="total-label" id="total-label">Total</div>
+        <button id="btn-limit" class="limit-chip" type="button">Poner límite</button>
+        <div class="limit-text" id="limit-text" hidden aria-live="polite"></div>
         <div class="total-amount" id="total-amount" aria-live="polite">$ 0,00</div>
-        <div class="total-meta" id="total-meta">Sin artículos</div>
-        <div class="limit" id="limit-box" hidden>
-          <div class="limit-bar" aria-hidden="true">
-            <div class="limit-fill" id="limit-fill"></div>
-            <div class="limit-mark" id="limit-mark"></div>
-          </div>
-          <div class="limit-text">
-            <span id="limit-text"></span>
-            <span class="limit-of" id="limit-of"></span>
-          </div>
+        <div class="limit-bar" id="limit-box" hidden aria-hidden="true">
+          <div class="limit-fill" id="limit-fill"></div>
+          <div class="limit-mark" id="limit-mark"></div>
         </div>
+        <div class="total-meta" id="total-meta">Sin artículos</div>
       </section>
 
       <main class="main">
         <section class="close-card" id="close-card" hidden aria-live="polite"></section>
         <div class="list-head" id="list-head" hidden>
-          <h2>Lista</h2>
+          <h2>En el carrito</h2>
           <div class="list-actions">
             <button id="btn-clear" class="text-btn" type="button">Vaciar</button>
             <button id="btn-finish" class="btn small secondary" type="button">
@@ -65,23 +58,18 @@
             <svg viewBox="0 0 24 24"><path d="M5 7h14l-1.2 11.1a2 2 0 0 1-2 1.9H8.2a2 2 0 0 1-2-1.9L5 7z" /><path d="M9 7V6a3 3 0 0 1 6 0v1" /></svg>
           </div>
           <p class="empty-title">Tu lista está vacía</p>
-          <p class="empty-text">Sacale una foto al cartel del precio, escaneá el código o cargalo a mano.</p>
+          <p class="empty-text">Escaneá el código o el cartel del precio, o cargalo a mano.</p>
         </div>
       </main>
     </div>
 
     <nav class="actionbar" aria-label="Agregar artículo">
-      <button id="btn-photo" class="btn primary" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.6l1.2-1.6A1 1 0 0 1 10.1 4h3.8a1 1 0 0 1 .8.4L15.9 6h1.6A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5v-8z" /><circle cx="12" cy="12.5" r="3.5" /></svg>
-        <span>Foto del precio</span>
+      <button id="btn-scan" class="btn primary" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6.5A2.5 2.5 0 0 1 6.5 4H8M16 4h1.5A2.5 2.5 0 0 1 20 6.5V8M20 16v1.5a2.5 2.5 0 0 1-2.5 2.5H16M8 20H6.5A2.5 2.5 0 0 1 4 17.5V16" /><path d="M8 12h8" /></svg>
+        <span>Escanear</span>
       </button>
-      <button id="btn-code" class="btn secondary" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10.5 6v12M13 6v12M16.5 6v12M20 6v12" /></svg>
-        <span>Código</span>
-      </button>
-      <button id="btn-manual" class="btn secondary" type="button">
+      <button id="btn-manual" class="btn secondary" type="button" aria-label="Agregar a mano" title="Agregar a mano">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-        <span>A mano</span>
       </button>
     </nav>
 
@@ -234,16 +222,22 @@
           </button>
         </header>
         <div class="sheet-scroll">
+          <p class="field-label">Total</p>
           <div class="finish-total" id="finish-total"></div>
+          <p class="finish-sub" id="finish-sub"></p>
           <ul class="trips" id="finish-trips"></ul>
-          <label class="field">
-            <span class="field-label">¿Dónde compraste? <em>opcional</em></span>
-            <input id="finish-place-name" type="text" list="known-places" autocomplete="off" autocapitalize="words" maxlength="60" placeholder="Ej.: Coto Palermo, kiosco de la esquina" />
-          </label>
+          <p class="section-title finish-where">¿Dónde compraste? <em>opcional</em></p>
+          <div class="place-list" id="finish-known" role="radiogroup" aria-label="Lugares donde ya compraste"></div>
+          <div id="finish-other">
+            <label class="field">
+              <span class="field-label">Lugar</span>
+              <input id="finish-place-name" type="text" list="known-places" autocomplete="off" autocapitalize="words" maxlength="60" placeholder="Ej.: Coto Palermo, kiosco de la esquina" />
+            </label>
+            <p class="field-label">Tipo de gasto</p>
+            <div class="chips place-chips" id="finish-places" role="radiogroup" aria-label="Tipo de gasto"></div>
+          </div>
           <datalist id="known-places"></datalist>
-          <p class="field-label">Tipo de gasto</p>
-          <div class="chips place-chips" id="finish-places" role="radiogroup" aria-label="Tipo de gasto"></div>
-          <p class="muted small-note">Se guarda en Gastos con la fecha y hora en que agregaste los artículos, y la lista queda vacía.</p>
+          <p class="muted small-note">Se guarda con la fecha y hora en que agregaste los artículos, y la lista queda vacía.</p>
         </div>
         <div class="sheet-actions">
           <button type="submit" class="btn primary grow" id="btn-finish-save">Guardar en Gastos</button>
@@ -282,7 +276,9 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 6h3l-7 12 1-8H8z" /></svg>
           </button>
         </header>
+        <p class="cam-pill" id="cam-total" hidden aria-live="polite"></p>
         <p class="cam-status" id="cam-status" hidden role="status"></p>
+        <section class="cam-card" id="cam-card" hidden aria-live="polite" aria-label="Producto escaneado"></section>
         <div class="cam-error" id="cam-error" hidden role="alert">
           <p id="cam-error-text"></p>
           <button type="button" class="btn primary" id="cam-fallback">Usar la cámara del sistema</button>
@@ -294,6 +290,26 @@
           </button>
           <button type="button" class="shutter" id="cam-shutter" aria-label="Sacar foto"></button>
           <span class="cam-side" aria-hidden="true"></span>
+        </footer>
+      </div>
+    </dialog>
+
+    <!-- Resumen del cierre de mes -->
+    <dialog id="sheet-recap" class="recap" aria-labelledby="recap-title">
+      <div class="recap-inner">
+        <header class="recap-top">
+          <p class="recap-kicker">Cierre de mes</p>
+          <button type="button" class="cam-btn" data-close aria-label="Cerrar resumen">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </header>
+        <div class="recap-body" id="recap-body"></div>
+        <footer class="recap-actions">
+          <button type="button" class="btn accent" id="recap-export">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14" /></svg>
+            Exportar CSV
+          </button>
+          <button type="button" class="btn ghost-light" id="recap-see">Ver las compras del mes</button>
         </footer>
       </div>
     </dialog>

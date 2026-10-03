@@ -128,7 +128,7 @@ for (const scheme of ['light', 'dark']) {
 test('a 360 px los textos de la barra inferior y los avisos entran completos', async ({ page, context }) => {
   await page.setViewportSize({ width: 360, height: 760 });
   await openOffline(page, context);
-  for (const id of ['#btn-photo', '#btn-code', '#btn-manual']) {
+  for (const id of ['#btn-scan']) {
     const fits = await page.locator(`${id} span`).evaluate((e) => e.scrollWidth <= e.clientWidth);
     expect(fits, `${id} cortado`).toBe(true);
   }
@@ -191,6 +191,10 @@ for (const scheme of ['light', 'dark']) {
     }
     const shot = (name) => page.screenshot({ path: `docs/capturas/${scheme}-${name}.png` });
     await shot('11-cierre-mes');
+    await page.locator('#close-card').getByRole('button', { name: 'Ver resumen' }).click();
+    await shot('17-resumen-mes');
+    await noHorizontalScroll(page, 'resumen 412');
+    await page.locator('#sheet-recap [data-close]').click();
     await page.click('#btn-finish');
     await page.fill('#finish-place-name', 'Coto Palermo');
     await page.locator('#finish-places').getByRole('radio', { name: 'Supermercado' }).click();
@@ -214,9 +218,12 @@ for (const scheme of ['light', 'dark']) {
     const b64 = await renderLabel(p, { items: [{ text: 'Yerba Playadito 1 kg', x: 60, y: 110, size: 56, weight: 600 }, { text: '$ 4.250', x: 60, y: 420, size: 230 }] });
     await p.close();
     await page.evaluate((b) => window.__setFakeCam(b), b64);
-    await page.click('#btn-photo');
+    await page.click('#btn-scan');
     await expect(page.locator('#cam-shutter')).toBeEnabled();
     await page.waitForTimeout(300);
     await shot('16-camara');
+    await page.click('#cam-shutter');
+    await expect(page.locator('#cam-card .cc-price')).toHaveText('$ 4.250,00', { timeout: 120_000 });
+    await shot('18-camara-producto');
   });
 }

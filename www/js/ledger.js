@@ -255,6 +255,20 @@ export function knownPlaces(ledger) {
   return [...map.values()].sort((a, b) => b.count - a.count || (a.last < b.last ? 1 : -1));
 }
 
+// Gasto del mes por lugar escrito (o por tipo si no se escribió el lugar), de mayor a menor.
+export function placeBreakdown(ledger, mk) {
+  const map = new Map();
+  for (const p of monthTotals(ledger, mk).purchases) {
+    const name = p.placeName || PLACE_LABEL[p.place] || 'Sin especificar';
+    const k = name.toLowerCase();
+    const cur = map.get(k) || { name, total: 0, count: 0 };
+    cur.total += p.total;
+    cur.count++;
+    map.set(k, cur);
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total);
+}
+
 export function placeTypeFor(ledger, name) {
   const k = cleanPlaceName(name).toLowerCase();
   if (!k) return '';

@@ -10,7 +10,7 @@ Funciona **sin internet**: la fuente, el lector de precios (OCR) y el lector de 
 2. Entrá a la pestaña **Actions**.
 3. A la izquierda (o en el menú «All workflows») elegí **Generar APK**.
 4. Tocá **Run workflow** → elegí la rama → **Run workflow**.
-5. Esperá a que el círculo amarillo pase a ✓ verde (tarda unos 5–10 minutos). El workflow también corre solo cuando se sube código a `main`.
+5. Esperá a que el círculo amarillo pase a ✓ verde (tarda unos 5–10 minutos). El workflow también corre solo cada vez que se sube código al repositorio.
 
 ### 2. Descargar el APK
 1. Tocá la ejecución terminada (la del ✓ verde).

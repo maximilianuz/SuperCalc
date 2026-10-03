@@ -1,0 +1,11 @@
+{
+  "appId": "ar.compras.app",
+  "appName": "Compras",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

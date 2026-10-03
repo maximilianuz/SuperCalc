@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="es-AR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)" />
+    <meta name="description" content="Calculá cuánto gastás en el súper mientras agregás artículos." />
+    <title>Compras</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <h1 class="brand">Compras</h1>
+        <div class="top-actions">
+          <button id="btn-history" class="icon-btn" type="button" aria-label="Historial de precios" title="Historial de precios">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-5 4 4 8-8" /><path d="M14 8h6v6" /></svg>
+          </button>
+          <button id="btn-limit" class="icon-btn" type="button" aria-label="Límite de gasto" title="Límite de gasto">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M12 12l4-3" /><path d="M12 7v1M7 12h1M16.5 12h.5" /></svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="total-card" id="total-card" aria-label="Total">
+        <div class="total-label">Total</div>
+        <div class="total-amount" id="total-amount" aria-live="polite">$ 0,00</div>
+        <div class="total-meta" id="total-meta">Sin artículos</div>
+        <div class="limit" id="limit-box" hidden>
+          <div class="limit-bar" aria-hidden="true">
+            <div class="limit-fill" id="limit-fill"></div>
+            <div class="limit-mark" id="limit-mark"></div>
+          </div>
+          <div class="limit-text">
+            <span id="limit-text"></span>
+            <span class="limit-of" id="limit-of"></span>
+          </div>
+        </div>
+      </section>
+
+      <main class="main">
+        <div class="list-head" id="list-head" hidden>
+          <h2>Lista</h2>
+          <button id="btn-clear" class="text-btn" type="button">Vaciar</button>
+        </div>
+        <ul id="list" class="list" aria-label="Artículos"></ul>
+        <div id="empty" class="empty">
+          <div class="empty-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M5 7h14l-1.2 11.1a2 2 0 0 1-2 1.9H8.2a2 2 0 0 1-2-1.9L5 7z" /><path d="M9 7V6a3 3 0 0 1 6 0v1" /></svg>
+          </div>
+          <p class="empty-title">Tu lista está vacía</p>
+          <p class="empty-text">Sacale una foto al cartel del precio, escaneá el código o cargalo a mano.</p>
+        </div>
+      </main>
+    </div>
+
+    <nav class="actionbar" aria-label="Agregar artículo">
+      <button id="btn-photo" class="btn primary" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.6l1.2-1.6A1 1 0 0 1 10.1 4h3.8a1 1 0 0 1 .8.4L15.9 6h1.6A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5v-8z" /><circle cx="12" cy="12.5" r="3.5" /></svg>
+        <span>Foto del precio</span>
+      </button>
+      <button id="btn-code" class="btn secondary" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10.5 6v12M13 6v12M16.5 6v12M20 6v12" /></svg>
+        <span>Código</span>
+      </button>
+      <button id="btn-manual" class="btn secondary" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        <span>A mano</span>
+      </button>
+    </nav>
+
+    <input id="file-photo" type="file" accept="image/*" capture="environment" hidden />
+    <input id="file-code" type="file" accept="image/*" capture="environment" hidden />
+
+    <!-- Hoja: agregar / editar artículo -->
+    <dialog id="sheet-item" class="sheet" aria-labelledby="item-title">
+      <form id="item-form" class="sheet-inner" method="dialog" novalidate>
+        <div class="grabber" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <h2 id="item-title">Agregar artículo</h2>
+          <button type="button" class="icon-btn" data-close aria-label="Cerrar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </header>
+        <div class="sheet-scroll">
+          <div class="busy" id="item-busy" hidden role="status">
+            <span class="spinner" aria-hidden="true"></span>
+            <span id="item-busy-text">Leyendo…</span>
+          </div>
+          <div class="notice" id="scan-msg" hidden role="status"></div>
+          <div class="scan-box" id="scan-box" hidden>
+            <p class="scan-title">Precios detectados <span>Tocá uno para usarlo</span></p>
+            <div class="chips" id="cands"></div>
+            <ul class="warnings" id="scan-warn"></ul>
+          </div>
+
+          <label class="field">
+            <span class="field-label">Nombre <em>opcional</em></span>
+            <input id="f-name" type="text" list="known-names" autocomplete="off" autocapitalize="sentences" enterkeyhint="next" placeholder="Ej.: Yerba 1 kg" maxlength="120" />
+          </label>
+          <datalist id="known-names"></datalist>
+
+          <div class="field">
+            <label class="field-label" for="f-price">Precio unitario</label>
+            <div class="price-input">
+              <span aria-hidden="true">$</span>
+              <input id="f-price" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="0,00" />
+            </div>
+            <p class="field-error" id="price-err" hidden>Ingresá un precio válido</p>
+          </div>
+
+          <p class="trend" id="f-trend" hidden></p>
+
+          <div class="pending" id="f-pending" hidden>
+            <p><strong>A confirmar.</strong> <span id="f-pending-text"></span></p>
+            <button type="button" class="btn small secondary" id="btn-confirm-price">Es el precio final</button>
+          </div>
+
+          <div class="code-line" id="f-code-line" hidden>
+            <span class="code-label">Código</span>
+            <span class="code-value" id="f-code"></span>
+            <button type="button" class="text-btn" id="btn-code-clear">Quitar</button>
+          </div>
+
+          <div class="tools">
+            <button type="button" class="btn small secondary" id="btn-item-photo">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.6l1.2-1.6A1 1 0 0 1 10.1 4h3.8a1 1 0 0 1 .8.4L15.9 6h1.6A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5v-8z" /><circle cx="12" cy="12.5" r="3.5" /></svg>
+              Leer precio con foto
+            </button>
+            <button type="button" class="btn small secondary" id="btn-item-code">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6v12M7 6v12M10.5 6v12M13 6v12M16.5 6v12M20 6v12" /></svg>
+              Escanear código
+            </button>
+          </div>
+
+          <div class="qty-line">
+            <span class="field-label">Cantidad</span>
+            <div class="stepper">
+              <button type="button" class="step" id="f-minus" aria-label="Restar uno">−</button>
+              <output id="f-qty" aria-live="polite">1</output>
+              <button type="button" class="step" id="f-plus" aria-label="Sumar uno">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="sheet-actions">
+          <button type="button" class="btn danger-ghost" id="btn-item-remove" hidden>Quitar</button>
+          <button type="submit" class="btn primary grow" id="btn-item-save">Agregar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Hoja: límite de gasto -->
+    <dialog id="sheet-limit" class="sheet" aria-labelledby="limit-title">
+      <form id="limit-form" class="sheet-inner" method="dialog" novalidate>
+        <div class="grabber" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <h2 id="limit-title">Límite de gasto</h2>
+          <button type="button" class="icon-btn" data-close aria-label="Cerrar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </header>
+        <div class="sheet-scroll">
+          <p class="muted">Te avisamos cuando lo superes. La lista sigue sumando igual.</p>
+          <div class="field">
+            <label class="field-label" for="f-limit">¿Cuánto querés gastar como máximo?</label>
+            <div class="price-input">
+              <span aria-hidden="true">$</span>
+              <input id="f-limit" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="0" />
+            </div>
+            <p class="field-error" id="limit-err" hidden>Ingresá un monto válido</p>
+          </div>
+        </div>
+        <div class="sheet-actions">
+          <button type="button" class="btn danger-ghost" id="btn-limit-remove">Quitar límite</button>
+          <button type="submit" class="btn primary grow" id="btn-limit-save">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Confirmación propia -->
+    <dialog id="dlg-confirm" class="alert" aria-labelledby="confirm-title">
+      <form method="dialog" class="alert-inner">
+        <h2 id="confirm-title"></h2>
+        <p id="confirm-text"></p>
+        <div class="alert-actions">
+          <button value="cancel" class="btn secondary" id="confirm-cancel">Cancelar</button>
+          <button value="ok" class="btn danger" id="confirm-ok">Aceptar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Historial de precios -->
+    <dialog id="sheet-history" class="sheet tall" aria-labelledby="history-title">
+      <div class="sheet-inner">
+        <div class="grabber" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <button type="button" class="icon-btn" id="hist-back" aria-label="Volver" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+          </button>
+          <h2 id="history-title">Historial de precios</h2>
+          <button type="button" class="icon-btn" data-close aria-label="Cerrar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </header>
+        <div class="sheet-scroll" id="hist-body"></div>
+      </div>
+    </dialog>
+
+    <div id="toast-host" class="toast-host" aria-live="polite"></div>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>

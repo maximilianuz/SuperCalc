@@ -6,6 +6,9 @@ on:
     paths-ignore:
       - '**.md'
 
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -65,7 +68,7 @@ jobs:
           retention-days: 30
 
       - name: Crear Release con APK
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: Compras APK #${{ github.run_number }}

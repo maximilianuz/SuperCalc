@@ -4,7 +4,6 @@
 import { dayKey } from './ledger.js';
 
 export const PERIODS = ['day', 'week', 'month'];
-export const PERIOD_LABEL = { day: 'Por día', week: 'Por semana', month: 'Por mes' };
 
 // Semana de lunes a domingo; mes calendario. Fechas locales con setDate (no se corren por horario de verano).
 export function periodRange(period, now = Date.now()) {

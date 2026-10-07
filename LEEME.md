@@ -37,16 +37,22 @@ La primera vez Android te va a frenar. Cuando aparezca el aviso:
 Repetí los pasos 1, 2 y 4. Todos los APK se firman con la misma clave (`signing/debug.keystore`), así que el nuevo se instala **encima** del anterior y conservás la lista, el historial de precios y los gastos.
 
 ## Qué hace
-- Lista con nombre opcional, precio y cantidad (− / +). Arriba, fijo: el total o, si pusiste un límite,
-  **cuánto te queda hoy** en grande (el carrito queda abajo).
-- **Ya guardado**: debajo del total, lo que ya guardaste en Gastos hoy y en el mes (sin el carrito), para ver de un
-  vistazo si una compra ya se cargó. Al tocarlo abre los gastos del mes.
-  Mismo nombre (o código) y mismo precio → suma cantidad. Quitar con «Deshacer». «Vaciar» con confirmación.
-- Límite de gasto **por día, por semana o por mes**, con barra y marca; avisa (vibración + aviso) al pasarte
-  y sigue sumando. Cuenta lo que ya guardaste en Gastos más el carrito: terminar una compra no lo reinicia.
-  Con semana (lunes a domingo) o mes, sugiere **cuánto gastar hoy** para llegar: lo que queda del período
-  repartido en los días que faltan (incluido hoy), sin contar lo de hoy para que la cifra no cambie mientras
-  comprás. Pasarte de lo sugerido avisa; pasarte del período también, y se marca en rojo.
+- **Abajo, tres botones con nombre**: **Compra** (el carrito), **Escanear** (en el centro) y **Gastos**.
+- **Compra**: arriba, lo ya guardado en el mes (tocalo para ver los gastos) y el botón del **límite**.
+  La tarjeta muestra el carrito o, con límite, **cuánto te queda hoy** en grande, con una barra que separa lo ya
+  guardado hoy de lo que está en el carrito. Lista con nombre opcional, precio y cantidad (− / +); **Agregar a mano**
+  junto al título. Mismo nombre (o código) y mismo precio → suma cantidad. Quitar con «Deshacer». «Vaciar carrito» al final,
+  con confirmación.
+- Límite de gasto **por día, por semana o por mes**; avisa (vibración + aviso) al pasarte y sigue sumando. Cuenta lo que ya
+  guardaste en Gastos más el carrito: guardar una compra no lo reinicia. Con semana (lunes a domingo) o mes, sugiere
+  **cuánto gastar hoy**: lo que queda del período repartido en los días que faltan (incluido hoy), sin contar lo de hoy
+  para que la cifra no cambie mientras comprás.
+- **Guardar compra** (botón fijo sobre la barra de abajo, con el total): elegís con un toque
+  - la **fecha**: Hoy, Ayer u Otra fecha (para cargar una compra que te olvidaste);
+  - el **lugar**: los que más usás aparecen primero; «Otro» para escribir uno nuevo (con autocompletado);
+  - la **categoría**: las que más usás más Supermercado, Almacén, Carnicería, Verdulería, Kiosco y Farmacia.
+    **Escribir** abre un campo para crear la tuya (por ejemplo «Mascotas»); queda guardada para la próxima.
+    Si elegís un lugar que ya usaste, se elige sola su categoría.
 - **Escanear (escaneo continuo)**: la cámara queda abierta y arriba ves el total. Cuando lee un código de barras
   aparece una tarjeta: si ya lo compraste, con el último precio y **Añadir** (un toque); si es nuevo, **Leer precio**
   lee el cartel. El disparador lee el precio de un cartel sin código. **Escribir** pasa lo leído a la hoja de siempre.
@@ -56,25 +62,23 @@ Repetí los pasos 1, 2 y 4. Todos los APK se firman con la misma clave (`signing
   Detecta precios que no son el final (mayorista, promo, cuotas, por kg, sin impuestos, precio anterior)
   y los marca «A confirmar» (esos no entran al historial hasta que confirmes que son el precio final).
 - **Código**: lee EAN-13 / EAN-8 / UPC-A de una foto (también de la misma foto del precio).
-- **Historial de precios** por producto, con gráfico, subas/bajas, actualizar y borrar con «Deshacer».
-- **Terminar compra**: guarda la lista en **Gastos** con el **lugar**: los que más usás aparecen primero y se eligen
-  con un toque (con su tipo); «Otro lugar» para escribir uno nuevo (por ejemplo «Coto Palermo»,
-  con autocompletado) y el **tipo de gasto** (Supermercado, Almacén/minimercado, Kiosco,
-  Verdulería/carnicería u Otro). Si escribís un lugar que ya usaste, el tipo se elige solo. Las dos cosas se pueden
-  editar después desde Gastos → mes → compra. «Vaciar» en cambio descarta sin guardar.
+- **Gastos → Por mes**: total del mes con la comparación contra el anterior (‹ › para cambiar de mes), una barra
+  **por categoría** y las compras **agrupadas por día con el total de cada día**. Tocá el total para ver el año (barras
+  por mes y promedio). Exportar el mes con el botón de arriba a la derecha.
+- **Detalle de una compra**: Fecha (conserva la hora), Lugar y Categoría se editan tocándolos; precio y cantidad de cada
+  artículo, **Agregar** un artículo que faltó, quitar uno o **Borrar compra** (con «Deshacer»). Los cambios se guardan solos.
+- **Gastos → Precios** (historial de precios): por producto, con gráfico, subas/bajas, actualizar y borrar con «Deshacer».
 - **Día de compra automático**: cada artículo guarda la hora en que lo agregaste. Si entre dos artículos pasan
   más de 2 horas se toman como compras distintas (súper a la mañana, kiosco a la tarde). Si abrís la app otro día
   con artículos de un día anterior, esa compra se guarda sola en Gastos con su fecha (con «Deshacer»).
 - **Cierre mensual**: al cambiar el mes, el anterior se cierra y aparece un aviso. **Ver resumen** abre el cierre:
   total, variación contra el mes previo, promedio por compra, gasto por lugar, el producto que más subió y
   **Exportar CSV**.
-- **Gastos (historial anual)**: total del año, promedio por mes, barras por mes y, en cada mes, las compras
-  **agrupadas por día con el total de cada día**. En una compra se puede corregir la **fecha** (conserva la hora;
-  sirve también para cargar una compra de otro día), el lugar, el **precio y la cantidad** de cada artículo,
-  quitar un artículo o borrar la compra (con «Deshacer»).
+- Las compras guardadas con versiones anteriores conservan su tipo como categoría (Supermercado, Almacén, Kiosco,
+  Verdulería u Otro).
 
 ## Exportar el mes (para otra app de gastos)
-En **Gastos → mes → «Exportar … (CSV)»** (o en el resumen de cierre de mes → «Exportar CSV»).
+En **Gastos → Por mes → botón de exportar (arriba a la derecha)** (o en el resumen de cierre de mes → «Exportar CSV»).
 En el celular se abre **Compartir** de Android para mandar el archivo directo a la otra app (o guardarlo en Drive,
 mandarlo por mail, etc.). El archivo se llama `compras-AAAA-MM.csv` y tiene **una fila por compra**:
 
@@ -83,7 +87,7 @@ mandarlo por mail, etc.). El archivo se llama `compras-AAAA-MM.csv` y tiene **un
 | Fecha | `2026-09-06` | AAAA-MM-DD |
 | Hora | `10:05` | hora del primer artículo |
 | Lugar | `Coto Palermo` | lo que escribiste |
-| Tipo de gasto | `Supermercado` | o `Sin especificar` |
+| Categoría | `Supermercado` | la que elegiste o escribiste, o `Sin especificar` |
 | Monto | `5350.00` | punto decimal, sin separador de miles |
 | Moneda | `ARS` | |
 | Artículos | `2` | unidades |

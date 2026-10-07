@@ -3,18 +3,14 @@
 //
 // ledger = {
 //   v: 1,
-//   purchases: [{ id, day: 'AAAA-MM-DD', start, end, place, items: [{ name, code, cents, qty }], total, auto }],
+//   purchases: [{ id, day: 'AAAA-MM-DD', start, end, placeName, category, items: [{ name, code, cents, qty }], total, auto }],
 //   closes: [{ month: 'AAAA-MM', closedAt, total, count, seen }],
 // }
 
-export const PLACES = [
-  { id: 'super', label: 'Supermercado' },
-  { id: 'mini', label: 'Almacén / minimercado' },
-  { id: 'kiosco', label: 'Kiosco' },
-  { id: 'verduleria', label: 'Verdulería / carnicería' },
-  { id: 'otro', label: 'Otro' },
-];
-export const PLACE_LABEL = Object.fromEntries(PLACES.map((p) => [p.id, p.label]));
+// La categoría es texto libre; estas aparecen de entrada y después se suman las que escribas.
+export const DEFAULT_CATEGORIES = ['Supermercado', 'Almacén', 'Carnicería', 'Verdulería', 'Kiosco', 'Farmacia'];
+// Tipos fijos de versiones anteriores
+const LEGACY_PLACE = { super: 'Supermercado', mini: 'Almacén', kiosco: 'Kiosco', verduleria: 'Verdulería', otro: 'Otro' };
 export const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 // Si entre dos artículos pasan más de 2 horas, se toman como compras distintas.
@@ -64,8 +60,8 @@ export function sanitizeLedger(raw) {
         day: p.day,
         start: Number.isFinite(p.start) ? p.start : 0,
         end: Number.isFinite(p.end) ? p.end : 0,
-        place: PLACE_LABEL[p.place] ? p.place : '',
         placeName: cleanPlaceName(p.placeName),
+        category: cleanCategory(p.category) || LEGACY_PLACE[p.place] || '',
         items,
         total: items.reduce((s, it) => s + it.cents * it.qty, 0),
         auto: !!p.auto,
@@ -90,6 +86,11 @@ export function sanitizeLedger(raw) {
 
 export function cleanPlaceName(name) {
   return typeof name === 'string' ? name.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+}
+
+export function cleanCategory(name) {
+  const s = typeof name === 'string' ? name.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+  return s && s[0].toUpperCase() + s.slice(1);
 }
 
 function sortPurchases(ps) {
@@ -122,13 +123,19 @@ export function groupTrips(items, now = Date.now()) {
   return groups;
 }
 
-// Guarda artículos como compras. place se aplica a todas las compras creadas.
-export function archiveItems(ledger, items, { place = '', placeName = '', now = Date.now(), auto = false } = {}) {
+// Guarda artículos como compras; lugar y categoría se aplican a todas. Con day (otra fecha elegida a mano)
+// todo va a una sola compra de ese día, con la hora en que se agregaron los artículos.
+export function archiveItems(ledger, items, { placeName = '', category = '', day = '', now = Date.now(), auto = false } = {}) {
   const next = clone(ledger);
   const created = [];
-  for (const g of groupTrips(items, now)) {
+  let groups = groupTrips(items, now);
+  if (isRealDay(day) && groups.length) {
+    const all = { day, start: moveToDay(groups[0].start, day), end: moveToDay(groups[groups.length - 1].end, day), items: groups.flatMap((g) => g.items) };
+    groups = [all];
+  }
+  for (const g of groups) {
     const its = g.items.map((it) => ({ name: it.name || '', code: it.code || '', cents: it.cents, qty: it.qty }));
-    const p = { id: pid(now), day: g.day, start: g.start, end: g.end, place: PLACE_LABEL[place] ? place : '', placeName: cleanPlaceName(placeName), items: its, total: its.reduce((s, it) => s + it.cents * it.qty, 0), auto };
+    const p = { id: pid(now), day: g.day, start: g.start, end: g.end, placeName: cleanPlaceName(placeName), category: cleanCategory(category), items: its, total: its.reduce((s, it) => s + it.cents * it.qty, 0), auto };
     next.purchases.push(p);
     created.push(p.id);
   }
@@ -178,15 +185,15 @@ export function markCloseSeen(ledger, mk) {
 export function closeSummary(ledger, mk) {
   const cur = monthTotals(ledger, mk);
   const prev = monthTotals(ledger, prevMonthKey(mk));
-  const byPlace = {};
-  for (const p of cur.purchases) byPlace[p.place || ''] = (byPlace[p.place || ''] || 0) + p.total;
+  const byCategory = {};
+  for (const p of cur.purchases) byCategory[p.category || ''] = (byCategory[p.category || ''] || 0) + p.total;
   return {
     month: mk,
     total: cur.total,
     count: cur.count,
     prevTotal: prev.count ? prev.total : null,
     pct: prev.count && prev.total ? ((cur.total - prev.total) / prev.total) * 100 : null,
-    byPlace,
+    byCategory,
   };
 }
 
@@ -227,21 +234,27 @@ function retotal(p) {
   p.total = p.items.reduce((s, it) => s + it.cents * it.qty, 0);
 }
 
+function isRealDay(day) {
+  if (!isDay(day)) return false;
+  const [y, m, d] = day.split('-').map(Number);
+  return dayKey(new Date(y, m - 1, d)) === day;
+}
+
+function moveToDay(t, day) {
+  if (!t) return t;
+  const [y, m, d] = day.split('-').map(Number);
+  const x = new Date(t);
+  x.setFullYear(y, m - 1, d);
+  return x.getTime();
+}
+
 // Cambia el día de una compra conservando la hora (para corregir o cargar una compra de otro día).
 export function setPurchaseDay(ledger, id, day) {
   const next = clone(ledger);
   const p = next.purchases.find((x) => x.id === id);
-  if (!p || !isDay(day) || p.day === day) return next;
-  const [y, m, d] = day.split('-').map(Number);
-  if (dayKey(new Date(y, m - 1, d)) !== day) return next;
-  const move = (t) => {
-    if (!t) return t;
-    const x = new Date(t);
-    x.setFullYear(y, m - 1, d);
-    return x.getTime();
-  };
-  p.start = move(p.start);
-  p.end = move(p.end);
+  if (!p || !isRealDay(day) || p.day === day) return next;
+  p.start = moveToDay(p.start, day);
+  p.end = moveToDay(p.end, day);
   p.day = day;
   sortPurchases(next.purchases);
   return next;
@@ -254,6 +267,15 @@ export function setPurchaseItem(ledger, id, index, { cents, qty }) {
   if (!it) return next;
   if (Number.isSafeInteger(cents) && cents > 0) it.cents = cents;
   if (Number.isSafeInteger(qty) && qty > 0) it.qty = Math.min(qty, 9999);
+  retotal(p);
+  return next;
+}
+
+export function addPurchaseItem(ledger, id, { name = '', cents, qty = 1 }) {
+  const next = clone(ledger);
+  const p = next.purchases.find((x) => x.id === id);
+  if (!p || !Number.isSafeInteger(cents) || cents <= 0) return next;
+  p.items.push({ name: String(name).replace(/\s+/g, ' ').trim().slice(0, 120), code: '', cents, qty: Math.min(Math.max(1, qty | 0), 9999) });
   retotal(p);
   return next;
 }
@@ -280,10 +302,10 @@ export function monthDays(ledger, mk) {
   return days;
 }
 
-export function setPlace(ledger, id, place) {
+export function setCategory(ledger, id, category) {
   const next = clone(ledger);
   const p = next.purchases.find((x) => x.id === id);
-  if (p) p.place = PLACE_LABEL[place] ? place : '';
+  if (p) p.category = cleanCategory(category);
   return next;
 }
 
@@ -294,29 +316,47 @@ export function setPlaceName(ledger, id, name) {
   return next;
 }
 
-// Lugares usados antes (para autocompletar y recordar su tipo). Más usados primero.
+// Lugares usados antes (para elegirlos con un toque y recordar su categoría). Más usados primero.
 export function knownPlaces(ledger) {
   const map = new Map();
   for (const p of ledger.purchases) {
     if (!p.placeName) continue;
     const k = p.placeName.toLowerCase();
-    const cur = map.get(k) || { name: p.placeName, place: '', count: 0, last: '' };
+    const cur = map.get(k) || { name: p.placeName, category: '', count: 0, last: '' };
     cur.count++;
     if (p.day >= cur.last) {
       cur.last = p.day;
       cur.name = p.placeName;
-      if (p.place) cur.place = p.place;
+      if (p.category) cur.category = p.category;
     }
     map.set(k, cur);
   }
   return [...map.values()].sort((a, b) => b.count - a.count || (a.last < b.last ? 1 : -1));
 }
 
+// Categorías para elegir: las que más usás primero, después las de entrada que falten.
+export function knownCategories(ledger, extra = []) {
+  const count = new Map();
+  for (const p of ledger.purchases) {
+    if (!p.category) continue;
+    const k = p.category.toLowerCase();
+    const cur = count.get(k) || { name: p.category, n: 0 };
+    cur.n++;
+    count.set(k, cur);
+  }
+  const out = [...count.values()].sort((a, b) => b.n - a.n).map((c) => c.name);
+  for (const c of [...extra, ...DEFAULT_CATEGORIES]) {
+    const v = cleanCategory(c);
+    if (v && !out.some((x) => x.toLowerCase() === v.toLowerCase())) out.push(v);
+  }
+  return out;
+}
+
 // Gasto del mes por lugar escrito (o por tipo si no se escribió el lugar), de mayor a menor.
 export function placeBreakdown(ledger, mk) {
   const map = new Map();
   for (const p of monthTotals(ledger, mk).purchases) {
-    const name = p.placeName || PLACE_LABEL[p.place] || 'Sin especificar';
+    const name = p.placeName || p.category || 'Sin especificar';
     const k = name.toLowerCase();
     const cur = map.get(k) || { name, total: 0, count: 0 };
     cur.total += p.total;
@@ -326,16 +366,16 @@ export function placeBreakdown(ledger, mk) {
   return [...map.values()].sort((a, b) => b.total - a.total);
 }
 
-export function placeTypeFor(ledger, name) {
-  const k = cleanPlaceName(name).toLowerCase();
+export function categoryFor(ledger, placeName) {
+  const k = cleanPlaceName(placeName).toLowerCase();
   if (!k) return '';
-  return knownPlaces(ledger).find((x) => x.name.toLowerCase() === k)?.place || '';
+  return knownPlaces(ledger).find((x) => x.name.toLowerCase() === k)?.category || '';
 }
 
 // CSV del mes para importar en otra app de gastos.
-// Una fila por compra: Fecha (AAAA-MM-DD), Hora, Lugar, Tipo de gasto, Monto (punto decimal),
+// Una fila por compra: Fecha (AAAA-MM-DD), Hora, Lugar, Categoría, Monto (punto decimal),
 // Moneda, Artículos, Detalle. Separador coma, UTF-8 con BOM (para que Excel respete los acentos).
-export const CSV_HEADER = ['Fecha', 'Hora', 'Lugar', 'Tipo de gasto', 'Monto', 'Moneda', 'Artículos', 'Detalle'];
+export const CSV_HEADER = ['Fecha', 'Hora', 'Lugar', 'Categoría', 'Monto', 'Moneda', 'Artículos', 'Detalle'];
 
 function csvCell(v) {
   const s = String(v ?? '');
@@ -353,7 +393,7 @@ export function monthCSV(ledger, mk) {
     const detalle = p.items.map((it) => `${it.name || 'Artículo'} x${it.qty}`).join('; ');
     const monto = `${Math.floor(p.total / 100)}.${pad(p.total % 100)}`;
     lines.push(
-      [p.day, hora, p.placeName || '', PLACE_LABEL[p.place] || 'Sin especificar', monto, 'ARS', p.items.reduce((s, it) => s + it.qty, 0), detalle]
+      [p.day, hora, p.placeName || '', p.category || 'Sin especificar', monto, 'ARS', p.items.reduce((s, it) => s + it.qty, 0), detalle]
         .map(csvCell)
         .join(','),
     );

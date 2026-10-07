@@ -89,7 +89,9 @@ test('límite diario: barra, «Te quedan hoy», aviso al superarlo y sigue suman
   await page.click('#btn-limit-save');
   await expect(page.locator('#limit-box')).toBeVisible();
   await expect(page.locator('#limit-text')).toHaveText('Te quedan hoy $ 5.000,00');
-  await expect(page.locator('#btn-limit')).toHaveText('Por día $ 5.000');
+  await expect(page.locator('#stat-saved')).toBeVisible();
+  await expect(page.locator('#total-side')).toHaveText('0 % usado');
+  await expect(page.locator('#btn-limit')).toHaveText('$ 5.000 / día');
   await expect(page.locator('#limit-period')).toBeHidden();
 
   await addManual(page, { name: 'Aceite', price: '3000' });
@@ -120,7 +122,8 @@ test('límite diario: barra, «Te quedan hoy», aviso al superarlo y sigue suman
   await page.click('#btn-finish-save');
   await expect(page.locator('#total-amount')).toHaveText('$ 0,00');
   await expect(page.locator('#limit-text')).toHaveText('Hoy te pasaste por $ 1.500,50');
-  await expect(page.locator('#limit-period')).toHaveText('Incluye $ 6.500,50 ya guardados hoy');
+  await expect(page.locator('#saved-today')).toHaveText('$ 6.500,50');
+  await expect(page.locator('#total-side')).toHaveText('130 % usado');
 
   await page.click('#btn-limit');
   await page.click('#btn-limit-remove');
@@ -148,7 +151,7 @@ test('límite mensual: sugiere cuánto gastar hoy según lo que ya se gastó en 
   await expect(page.locator('#limit-preview')).toHaveText('Hoy podés gastar hasta $ 10.344 (quedan 29 días)');
   await page.click('#btn-limit-save');
 
-  await expect(page.locator('#btn-limit')).toHaveText('Por mes $ 400.000');
+  await expect(page.locator('#btn-limit')).toHaveText('$ 400.000 / mes');
   await expect(page.locator('#limit-text')).toHaveText('Te quedan hoy $ 10.344,00');
   await expect(page.locator('#limit-period span')).toHaveText(['Sugerido para hoy $ 10.344 · quedan 29 días', 'Mes: $ 100.000 de $ 400.000']);
 
@@ -192,12 +195,12 @@ test('botón «Atrás» cierra la hoja abierta sin recargar ni salir', async ({ 
   await page.click('#btn-manual');
   await page.evaluate(() => {
     document.querySelector('#sheet-item [data-close]').click();
-    document.querySelector('#btn-history').click();
+    document.querySelector('#btn-gastos').click();
   });
-  await expect(page.locator('#sheet-history')).toBeVisible();
+  await expect(page.locator('#sheet-gastos')).toBeVisible();
   await page.waitForTimeout(200);
   await page.evaluate(() => history.back());
-  await expect(page.locator('#sheet-history')).toBeHidden();
+  await expect(page.locator('#sheet-gastos')).toBeHidden();
   await page.waitForTimeout(200);
   expect(await page.evaluate(() => window.__marca)).toBe('viva');
 });

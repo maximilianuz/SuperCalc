@@ -60,9 +60,11 @@ test('historial: subida, bajada, corrección, actualizar, borrar y deshacer', as
   expect(await points(page)).toEqual({ 'n:leche la serenisima 1 l': [100000, 110000], 'n:cafe la virginia': [500000, 450000] });
 
   // Pantalla de historial
-  await page.click('#btn-history');
-  const sheet = page.locator('#sheet-history');
+  await page.click('#btn-gastos');
+  const sheet = page.locator('#sheet-gastos');
   await expect(sheet).toBeVisible();
+  await page.click('#g-tab-precios');
+  await expect(page.locator('#g-tab-precios')).toHaveAttribute('aria-selected', 'true');
   await expect(sheet.locator('.stat.up b')).toHaveText('1');
   await expect(sheet.locator('.stat.down b')).toHaveText('1');
   await expect(sheet.locator('.stat').nth(2).locator('b')).toHaveText('0');
@@ -70,7 +72,7 @@ test('historial: subida, bajada, corrección, actualizar, borrar y deshacer', as
   await expect(sheet.locator('.prod')).toHaveCount(2);
 
   await sheet.locator('.prod', { hasText: 'leche' }).click();
-  await expect(page.locator('#history-title')).toHaveText('leche la serenisima 1 L');
+  await expect(page.locator('#gastos-title')).toHaveText('leche la serenisima 1 L');
   await expect(sheet.locator('.detail-price')).toHaveText('$ 1.100,00');
   await expect(sheet.locator('.detail-cum')).toContainText('▲ Subió 10,0 % acumulado desde $ 1.000,00 (12 sept 2026)');
   await expect(sheet.locator('.chart svg path.line')).toHaveCount(1);
@@ -98,14 +100,14 @@ test('historial: subida, bajada, corrección, actualizar, borrar y deshacer', as
 
   // Borrar el producto y deshacer
   await sheet.getByRole('button', { name: 'Borrar producto' }).click();
-  await expect(page.locator('#history-title')).toHaveText('Historial de precios');
+  await expect(page.locator('#gastos-title')).toHaveText('Gastos');
   await expect(sheet.locator('.prod')).toHaveCount(1);
   await sheet.locator('.toast-host').getByRole('button', { name: 'Deshacer' }).click();
-  await expect(page.locator('#history-title')).toHaveText('leche la serenisima 1 L');
+  await expect(page.locator('#gastos-title')).toHaveText('leche la serenisima 1 L');
   await expect(sheet.locator('.point')).toHaveCount(2);
 
   // Volver, buscar y cerrar
-  await page.click('#hist-back');
+  await page.click('#gastos-back');
   await sheet.locator('#hist-q').fill('cafe');
   await expect(sheet.locator('.prod')).toHaveCount(1);
   // Botón «Atrás» (Android): cierra la hoja en vez de salir

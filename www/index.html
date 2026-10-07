@@ -16,63 +16,69 @@
   </head>
   <body>
     <div class="app">
-      <header class="topbar">
-        <h1 class="brand">Compras</h1>
-        <div class="top-actions">
-          <button id="btn-gastos" class="icon-btn" type="button" aria-label="Gastos por mes y año" title="Gastos">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2.5" /><path d="M4 9.5h16M8.5 3v4M15.5 3v4" /><path d="M8 13.5h2M14 13.5h2M8 16.5h2" /></svg>
-          </button>
-          <button id="btn-history" class="icon-btn" type="button" aria-label="Historial de precios" title="Historial de precios">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-5 4 4 8-8" /><path d="M14 8h6v6" /></svg>
-          </button>
+      <header class="page-head">
+        <div class="ph-text">
+          <button type="button" class="ph-kicker" id="saved-line"></button>
+          <h1>Compra</h1>
         </div>
+        <button id="btn-limit" class="limit-chip" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16a8 8 0 1 1 16 0" /><path d="M12 16l3.5-4.5" /></svg>
+          <span id="limit-chip-text">Poner límite</span>
+        </button>
       </header>
 
-      <section class="total-card" id="total-card" aria-label="Total">
-        <div class="total-label" id="total-label">Total</div>
-        <button id="btn-limit" class="limit-chip" type="button">Poner límite</button>
+      <section class="total-card" id="total-card" aria-label="Gasto de hoy">
         <div class="limit-text" id="limit-text" hidden aria-live="polite"></div>
-        <div class="total-amount" id="total-amount" aria-live="polite">$ 0,00</div>
+        <div class="total-side" id="total-side" hidden></div>
         <div class="limit-bar" id="limit-box" hidden aria-hidden="true">
+          <div class="limit-saved" id="limit-saved"></div>
           <div class="limit-fill" id="limit-fill"></div>
           <div class="limit-mark" id="limit-mark"></div>
         </div>
         <div class="limit-period" id="limit-period" hidden></div>
+        <div class="tc-stat tc-saved" id="stat-saved" hidden>
+          <span class="tc-label"><i class="dot ink" aria-hidden="true"></i>Guardado hoy</span>
+          <b class="tc-value" id="saved-today"></b>
+        </div>
+        <div class="tc-stat tc-cart">
+          <span class="tc-label" id="total-label"><i class="dot brand" aria-hidden="true"></i>En el carrito</span>
+          <div class="total-amount" id="total-amount" aria-live="polite">$ 0,00</div>
+        </div>
         <div class="total-meta" id="total-meta">Sin artículos</div>
       </section>
 
       <main class="main">
-        <button type="button" class="saved-line" id="saved-line" hidden></button>
         <section class="close-card" id="close-card" hidden aria-live="polite"></section>
-        <div class="list-head" id="list-head" hidden>
-          <h2>En el carrito</h2>
-          <div class="list-actions">
-            <button id="btn-clear" class="text-btn" type="button">Vaciar</button>
-            <button id="btn-finish" class="btn small secondary" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-              Terminar compra
-            </button>
-          </div>
+        <div class="list-head" id="list-head">
+          <h2>En el carrito <span class="count" id="cart-count"></span></h2>
+          <button id="btn-manual" class="text-btn strong" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            Agregar a mano
+          </button>
         </div>
         <ul id="list" class="list" aria-label="Artículos"></ul>
         <div id="empty" class="empty">
-          <div class="empty-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24"><path d="M5 7h14l-1.2 11.1a2 2 0 0 1-2 1.9H8.2a2 2 0 0 1-2-1.9L5 7z" /><path d="M9 7V6a3 3 0 0 1 6 0v1" /></svg>
-          </div>
-          <p class="empty-title">Tu lista está vacía</p>
-          <p class="empty-text">Escaneá el código o el cartel del precio, o cargalo a mano.</p>
+          <div class="empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" /><path d="M8 9v6M11 9v6M13.5 9v6M16 9v6" /></svg></div>
+          <p class="empty-title">Tu carrito está vacío</p>
+          <p class="empty-text">Tocá <b>Escanear</b> y apuntá al código o al cartel del precio, o agregalo a mano.</p>
+        </div>
+        <div class="list-foot" id="list-foot" hidden>
+          <button id="btn-clear" class="text-btn" type="button">Vaciar carrito</button>
         </div>
       </main>
     </div>
 
-    <nav class="actionbar" aria-label="Agregar artículo">
-      <button id="btn-scan" class="btn primary" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6.5A2.5 2.5 0 0 1 6.5 4H8M16 4h1.5A2.5 2.5 0 0 1 20 6.5V8M20 16v1.5a2.5 2.5 0 0 1-2.5 2.5H16M8 20H6.5A2.5 2.5 0 0 1 4 17.5V16" /><path d="M8 12h8" /></svg>
-        <span>Escanear</span>
-      </button>
-      <button id="btn-manual" class="btn secondary" type="button" aria-label="Agregar a mano" title="Agregar a mano">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-      </button>
+    <button id="btn-finish" class="finish-pill" type="button" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M8.5 12.2l2.4 2.4 4.6-4.9" /></svg>
+      <span class="fp-label">Guardar compra</span>
+      <span class="fp-total" id="finish-pill-total"></span>
+      <svg class="fp-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+    </button>
+
+    <nav class="tabbar" aria-label="Secciones">
+      <button type="button" class="tab" id="tab-compra" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1.1 11.1a2 2 0 0 1-2 1.9H8.1a2 2 0 0 1-2-1.9L5 8z" /><path d="M9 8V7a3 3 0 0 1 6 0v1" /></svg><span class="tab-label">Compra</span></button>
+      <button type="button" class="tab tab-scan" id="btn-scan"><span class="scan-orb"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" /><path d="M8 9v6M11 9v6M13.5 9v6M16 9v6" /></svg></span><span class="tab-label">Escanear</span></button>
+      <button type="button" class="tab" id="btn-gastos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h12v17l-3-2-3 2-3-2-3 2v-17z" /><path d="M9 8h6M9 11.5h6M9 15h3.5" /></svg><span class="tab-label">Gastos</span></button>
     </nav>
 
     <input id="file-photo" type="file" accept="image/*" capture="environment" hidden />
@@ -201,71 +207,76 @@
       </form>
     </dialog>
 
-    <!-- Historial de precios -->
-    <dialog id="sheet-history" class="sheet tall" aria-labelledby="history-title">
-      <div class="sheet-inner">
-        <div class="grabber" aria-hidden="true"></div>
-        <header class="sheet-head">
-          <button type="button" class="icon-btn" id="hist-back" aria-label="Volver" hidden>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
-          </button>
-          <h2 id="history-title">Historial de precios</h2>
-          <button type="button" class="icon-btn" data-close aria-label="Cerrar">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-          </button>
-        </header>
-        <div class="sheet-scroll" id="hist-body"></div>
-      </div>
-    </dialog>
-
-    <!-- Terminar compra -->
+    <!-- Guardar compra -->
     <dialog id="sheet-finish" class="sheet" aria-labelledby="finish-title">
       <form id="finish-form" class="sheet-inner" method="dialog" novalidate>
         <div class="grabber" aria-hidden="true"></div>
         <header class="sheet-head">
-          <h2 id="finish-title">Terminar compra</h2>
+          <h2 id="finish-title">Guardar compra</h2>
           <button type="button" class="icon-btn" data-close aria-label="Cerrar">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
         </header>
         <div class="sheet-scroll">
-          <p class="field-label">Total</p>
           <div class="finish-total" id="finish-total"></div>
           <p class="finish-sub" id="finish-sub"></p>
           <ul class="trips" id="finish-trips"></ul>
-          <p class="section-title finish-where">¿Dónde compraste? <em>opcional</em></p>
-          <div class="place-list" id="finish-known" role="radiogroup" aria-label="Lugares donde ya compraste"></div>
-          <div id="finish-other">
-            <label class="field">
-              <span class="field-label">Lugar</span>
-              <input id="finish-place-name" type="text" list="known-places" autocomplete="off" autocapitalize="words" maxlength="60" placeholder="Ej.: Coto Palermo, kiosco de la esquina" />
-            </label>
-            <p class="field-label">Tipo de gasto</p>
-            <div class="chips place-chips" id="finish-places" role="radiogroup" aria-label="Tipo de gasto"></div>
-          </div>
-          <datalist id="known-places"></datalist>
-          <p class="muted small-note">Se guarda con la fecha y hora en que agregaste los artículos, y la lista queda vacía.</p>
+          <section class="pick">
+            <p class="pick-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2.5" /><path d="M4 10h16M8.5 3v4M15.5 3v4" /></svg>Fecha</p>
+            <div class="pills" id="finish-days" role="radiogroup" aria-label="Fecha"></div>
+            <input id="finish-date" class="input" type="date" hidden aria-label="Elegí la fecha" />
+          </section>
+          <section class="pick">
+            <p class="pick-label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.7-6.5-11a6.5 6.5 0 0 1 13 0c0 5.3-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.3" /></svg>Lugar <em>opcional</em></p>
+            <div class="pills" id="finish-known" role="radiogroup" aria-label="Lugar"></div>
+            <div id="finish-other" hidden>
+              <input id="finish-place-name" class="input" type="text" list="known-places" autocomplete="off" autocapitalize="words" maxlength="60" placeholder="Ej.: Coto Palermo, kiosco de la esquina" aria-label="Lugar" />
+            </div>
+          </section>
+          <section class="pick">
+            <p class="pick-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="13" y="4" width="7" height="7" rx="2" /><rect x="4" y="13" width="7" height="7" rx="2" /><path d="M16.5 13.5v6M13.5 16.5h6" /></svg>Categoría <em>opcional</em></p>
+            <div class="pills" id="finish-places" role="radiogroup" aria-label="Categoría"></div>
+            <div class="cat-new" id="finish-cat-new" hidden>
+              <input id="finish-cat-input" class="input" type="text" autocomplete="off" autocapitalize="sentences" maxlength="40" enterkeyhint="done" placeholder="Ej.: Mascotas, Limpieza" aria-label="Nueva categoría" />
+              <button type="button" class="btn primary" id="finish-cat-add">Agregar</button>
+            </div>
+          </section>
         </div>
         <div class="sheet-actions">
-          <button type="submit" class="btn primary grow" id="btn-finish-save">Guardar en Gastos</button>
+          <button type="submit" class="btn primary grow" id="btn-finish-save">Guardar</button>
         </div>
       </form>
     </dialog>
 
-    <!-- Gastos: cierres mensuales e historial anual -->
-    <dialog id="sheet-gastos" class="sheet tall" aria-labelledby="gastos-title">
-      <div class="sheet-inner">
-        <div class="grabber" aria-hidden="true"></div>
-        <header class="sheet-head">
+    <datalist id="known-places"></datalist>
+    <datalist id="known-cats"></datalist>
+
+    <!-- Gastos: pantalla completa con su propia barra inferior; «Precios» es el historial de precios -->
+    <dialog id="sheet-gastos" class="screen" aria-labelledby="gastos-title">
+      <div class="screen-inner">
+        <header class="screen-head">
           <button type="button" class="icon-btn" id="gastos-back" aria-label="Volver" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
           </button>
           <h2 id="gastos-title">Gastos</h2>
-          <button type="button" class="icon-btn" data-close aria-label="Cerrar">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          <button type="button" class="icon-btn outlined" id="g-export" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11M7.5 8 12 3.5 16.5 8" /><path d="M5 13.5v4.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4.5" /></svg>
           </button>
         </header>
-        <div class="sheet-scroll" id="gastos-body"></div>
+        <div class="segmented" id="gastos-tabs" role="tablist" aria-label="Vista">
+          <button type="button" role="tab" id="g-tab-mes" aria-selected="true" aria-controls="gastos-body">Por mes</button>
+          <button type="button" role="tab" id="g-tab-precios" aria-selected="false" aria-controls="hist-body">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.4" /></svg>
+            Precios
+          </button>
+        </div>
+        <div class="screen-scroll" id="gastos-body" role="tabpanel" aria-labelledby="g-tab-mes"></div>
+        <div class="screen-scroll" id="hist-body" role="tabpanel" aria-labelledby="g-tab-precios" hidden></div>
+        <nav class="tabbar in-screen" aria-label="Secciones">
+          <button type="button" class="tab" data-close><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1.1 11.1a2 2 0 0 1-2 1.9H8.1a2 2 0 0 1-2-1.9L5 8z" /><path d="M9 8V7a3 3 0 0 1 6 0v1" /></svg><span class="tab-label">Compra</span></button>
+          <button type="button" class="tab tab-scan" id="gastos-scan"><span class="scan-orb"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" /><path d="M8 9v6M11 9v6M13.5 9v6M16 9v6" /></svg></span><span class="tab-label">Escanear</span></button>
+          <button type="button" class="tab" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h12v17l-3-2-3 2-3-2-3 2v-17z" /><path d="M9 8h6M9 11.5h6M9 15h3.5" /></svg><span class="tab-label">Gastos</span></button>
+        </nav>
       </div>
     </dialog>
 

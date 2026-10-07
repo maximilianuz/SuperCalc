@@ -96,11 +96,12 @@ for (const scheme of ['light', 'dark']) {
     await noHorizontalScroll(page, 'hoja foto 412');
     await page.locator('#sheet-item [data-close]').click();
 
-    await page.click('#btn-history');
+    await page.click('#btn-gastos');
+    await page.click('#g-tab-precios');
     await shot('6-historial');
     await page.locator('.prod', { hasText: 'Yerba' }).click();
     await shot('7-historial-detalle');
-    await page.locator('#sheet-history [data-close]').click();
+    await page.locator('#sheet-gastos [data-close]').click();
 
     await page.click('#btn-clear');
     await shot('8-vaciar');
@@ -112,12 +113,14 @@ for (const scheme of ['light', 'dark']) {
     await page.click('#btn-manual');
     await noHorizontalScroll(page, 'hoja 360');
     await page.locator('#sheet-item [data-close]').click();
-    await page.click('#btn-history');
+    await page.click('#btn-gastos');
+    await noHorizontalScroll(page, 'gastos 360');
+    await page.click('#g-tab-precios');
     await noHorizontalScroll(page, 'historial 360');
     await page.locator('.prod', { hasText: 'Yerba' }).click();
     await noHorizontalScroll(page, 'detalle 360');
     await page.screenshot({ path: `docs/capturas/${scheme}-9-detalle-360.png` });
-    await page.locator('#sheet-history [data-close]').click();
+    await page.locator('#sheet-gastos [data-close]').click();
     await page.click('#btn-limit');
     await noHorizontalScroll(page, 'límite 360');
     await page.locator('#sheet-limit [data-close]').click();
@@ -128,8 +131,8 @@ for (const scheme of ['light', 'dark']) {
 test('a 360 px los textos de la barra inferior y los avisos entran completos', async ({ page, context }) => {
   await page.setViewportSize({ width: 360, height: 760 });
   await openOffline(page, context);
-  for (const id of ['#btn-scan']) {
-    const fits = await page.locator(`${id} span`).evaluate((e) => e.scrollWidth <= e.clientWidth);
+  for (const id of ['#tab-compra', '#btn-scan', '#btn-gastos']) {
+    const fits = await page.locator(`${id} .tab-label`).evaluate((e) => e.scrollWidth <= e.clientWidth);
     expect(fits, `${id} cortado`).toBe(true);
   }
   await page.click('#btn-limit');
@@ -142,11 +145,16 @@ test('a 360 px los textos de la barra inferior y los avisos entran completos', a
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(360);
   const finish = await page.locator('#btn-finish').boundingBox();
-  const list = await page.locator('#list').boundingBox();
-  expect(finish.x + finish.width, '«Terminar compra» se sale del margen').toBeLessThanOrEqual(list.x + list.width + 0.5);
+  expect(finish.x).toBeGreaterThanOrEqual(0);
+  expect(finish.x + finish.width, '«Guardar compra» se sale de la pantalla').toBeLessThanOrEqual(360);
   const card = await page.locator('#total-card').boundingBox();
   const chip = await page.locator('#btn-limit').boundingBox();
-  expect(chip.x + chip.width).toBeLessThanOrEqual(card.x + card.width);
+  expect(chip.x + chip.width).toBeLessThanOrEqual(card.x + card.width + 0.5);
+  // El botón fijo no tapa el último artículo al llegar al final
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const last = await page.locator('.item').last().boundingBox();
+  const pill = await page.locator('#btn-finish').boundingBox();
+  expect(last.y + last.height).toBeLessThanOrEqual(pill.y);
 });
 
 test('APK con barra de estado: la barra superior queda visible y no se suman los márgenes dos veces', async ({ page, context }) => {
@@ -157,8 +165,8 @@ test('APK con barra de estado: la barra superior queda visible y no se suman los
     document.documentElement.style.setProperty('--safe-area-inset-top', '28px');
   });
   const top = await page.locator('.app').evaluate((e) => parseFloat(getComputedStyle(e).paddingTop));
-  expect(top).toBe(36);
-  for (const id of ['#btn-gastos', '#btn-history']) {
+  expect(top).toBe(32);
+  for (const id of ['#saved-line', '#btn-limit']) {
     const hit = await page.locator(id).evaluate((b) => {
       const r = b.getBoundingClientRect();
       return b.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
@@ -167,7 +175,7 @@ test('APK con barra de estado: la barra superior queda visible y no se suman los
   }
   // WebView vieja: Capacitor ya separa la app de las barras e informa 0
   await page.evaluate(() => document.documentElement.style.setProperty('--safe-area-inset-top', '0px'));
-  expect(await page.locator('.app').evaluate((e) => parseFloat(getComputedStyle(e).paddingTop))).toBe(8);
+  expect(await page.locator('.app').evaluate((e) => parseFloat(getComputedStyle(e).paddingTop))).toBe(4);
 });
 
 test('prefers-reduced-motion anula las animaciones de las hojas', async ({ page, context }) => {
@@ -228,16 +236,18 @@ for (const scheme of ['light', 'dark']) {
     await shot('12-terminar-compra');
     await page.locator('#sheet-finish [data-close]').click();
     await page.click('#btn-gastos');
+    await page.click('#g-mprev');
+    await shot('14-gastos-mes');
+    await page.click('#g-myear');
     await shot('13-gastos-anual');
     await page.locator('.month-row', { hasText: 'septiembre' }).click();
-    await shot('14-gastos-mes');
     await page.locator('.purchase-row').first().click();
     await shot('15-gastos-compra');
     await page.setViewportSize({ width: 360, height: 760 });
     await noHorizontalScroll(page, 'compra 360');
     await page.click('#gastos-back');
     await noHorizontalScroll(page, 'mes 360');
-    await page.click('#gastos-back');
+    await page.click('#g-myear');
     await noHorizontalScroll(page, 'año 360');
     await page.locator('#sheet-gastos [data-close]').click();
     await page.setViewportSize({ width: 412, height: 915 });

@@ -25,7 +25,7 @@ test('terminar compra: guarda con lugar y fecha, vacía la lista, Deshacer', asy
   await expect(page.locator('#total-amount')).toHaveText('$ 0,00');
   const l = await page.evaluate(() => window.__compras.ledger.purchases);
   expect(l).toHaveLength(1);
-  expect(l[0]).toMatchObject({ day: '2026-10-03', place: 'super', total: 535000 });
+  expect(l[0]).toMatchObject({ day: '2026-10-03', category: 'Supermercado', total: 535000 });
 
   await page.locator('#toast-host').getByRole('button', { name: 'Deshacer' }).click();
   await expect(page.locator('.item')).toHaveCount(2);
@@ -40,7 +40,7 @@ test('detecta compras distintas el mismo día (súper a la mañana, kiosco a la 
   await addManual(page, { name: 'Alfajor', price: '900' });
   await page.click('#btn-finish');
   await expect(page.locator('#finish-trips li')).toHaveCount(2);
-  await expect(page.locator('#finish-trips li').first()).toContainText('Hoy · 10:00');
+  await expect(page.locator('#finish-trips li').first()).toContainText('10:00 · 1 artículo');
   await page.click('#btn-finish-save');
   const l = await page.evaluate(() => window.__compras.ledger.purchases.map((p) => [p.day, p.total]));
   expect(l).toEqual([
@@ -86,16 +86,16 @@ test('cambio de día: la compra de ayer se guarda sola; cambio de mes: cierre co
   await expect(r).toBeHidden();
   const g = page.locator('#sheet-gastos');
   await expect(g).toBeVisible();
-  await expect(page.locator('#gastos-title')).toHaveText('Septiembre 2026');
-  await expect(g).toContainText('Cerrado el 1 oct 2026');
+  await expect(g.locator('.mh-label')).toHaveText('Septiembre 2026 · cerrado');
   await expect(g.locator('.purchase-row')).toHaveCount(1);
   await expect(g.locator('.purchase-row')).toContainText('guardada sola');
   await g.locator('.purchase-row').click();
   await expect(page.locator('#gastos-title')).toHaveText('Compra del mar 29 sept');
-  await g.getByRole('radio', { name: 'Kiosco' }).click();
-  await expect(g.getByRole('radio', { name: 'Kiosco' })).toHaveAttribute('aria-checked', 'true');
+  await page.fill('#g-category', 'kiosco');
+  await page.press('#g-category', 'Enter');
+  await expect(page.locator('#g-category')).toHaveValue('Kiosco');
   await page.click('#gastos-back');
-  await expect(g.locator('.place-bars')).toContainText('Kiosco');
+  await expect(g.locator('.cat-legend')).toContainText('Kiosco');
   await page.locator('#sheet-gastos [data-close]').click();
   await expect(card).toBeHidden(); // ya se vio
 
@@ -145,13 +145,16 @@ test('historial anual: barras por mes, total, promedio, años y borrar compra', 
   await addManual(page, { name: 'Pan', price: '2000' });
   await page.click('#btn-gastos');
   const g = page.locator('#sheet-gastos');
+  await expect(g.locator('.mh-label')).toHaveText('Abril 2026');
+  await expect(g).toContainText('Más $ 2.000,00 en el carrito, todavía sin guardar.');
+  await g.locator('#g-myear').click();
   await expect(page.locator('#g-year')).toHaveText('2026');
   await expect(page.locator('#g-total')).toHaveText('$ 40.000,00');
   await expect(g).toContainText('3 compras guardadas · promedio $ 20.000,00 por mes (2 meses con compras)');
   await expect(g.locator('.bars rect.bar:not(.empty)')).toHaveCount(3); // ene, mar y lo en curso de abril
   await expect(g.locator('.month-row')).toHaveCount(3);
   await expect(g.locator('.month-row').first()).toContainText('abril');
-  await expect(g.locator('.month-row').first()).toContainText('$ 2.000,00 sin guardar');
+  await expect(g.locator('.month-row').first()).toContainText('$ 2.000 sin guardar');
   await expect(g.locator('.month-row').nth(1)).toContainText('marzo');
   await expect(g.locator('.month-row').nth(1)).toContainText('$ 30.000,00');
   await expect(page.locator('#g-next')).toBeDisabled();
@@ -162,7 +165,7 @@ test('historial anual: barras por mes, total, promedio, años y borrar compra', 
   await page.click('#g-next');
 
   await g.locator('.month-row', { hasText: 'marzo' }).click();
-  await expect(g.locator('.place-bars li')).toHaveCount(2);
+  await expect(g.locator('.cat-legend li')).toHaveCount(2);
   await g.locator('.purchase-row', { hasText: 'Kiosco' }).click();
   await expect(g.locator('.p-items li output')).toHaveText('2');
   await expect(g.locator('.p-items li .s')).toHaveText('$ 2.000,00');
@@ -172,7 +175,7 @@ test('historial anual: barras por mes, total, promedio, años y borrar compra', 
   await expect(page.locator('#gastos-title')).toHaveText('Compra del jue 5 mar');
 });
 
-test('lugar escrito a mano, editable, con tipo recordado y exportación CSV del mes', async ({ page, context }) => {
+test('lugar escrito a mano, editable, con categoría recordada y exportación CSV del mes', async ({ page, context }) => {
   await page.clock.setFixedTime(at('2026-09-06T10:05:00'));
   await openOffline(page, context);
   await addManual(page, { name: 'Yerba', price: '4250' });
@@ -182,12 +185,12 @@ test('lugar escrito a mano, editable, con tipo recordado y exportación CSV del 
   await page.locator('#finish-places').getByRole('radio', { name: 'Supermercado' }).click();
   await page.click('#btn-finish-save');
 
-  // Otra compra en el mismo lugar: al escribirlo se elige solo el tipo
+  // Otra compra en el mismo lugar: al escribirlo se elige sola la categoría
   await page.clock.setFixedTime(at('2026-09-13T11:00:00'));
   await reloadSettled(page);
   await addManual(page, { name: 'Arroz', price: '1599,50' });
   await page.click('#btn-finish');
-  await page.locator('#finish-known').getByRole('radio', { name: 'Otro lugar' }).click();
+  await page.locator('#finish-known').getByRole('radio', { name: 'Otro', exact: true }).click();
   await page.fill('#finish-place-name', 'coto palermo');
   await expect(page.locator('#finish-places').getByRole('radio', { name: 'Supermercado' })).toHaveAttribute('aria-checked', 'true');
   await page.click('#btn-finish-save');
@@ -195,16 +198,16 @@ test('lugar escrito a mano, editable, con tipo recordado y exportación CSV del 
   // Editar el lugar de una compra desde Gastos
   await page.click('#btn-gastos');
   const g = page.locator('#sheet-gastos');
-  await g.locator('.month-row', { hasText: 'septiembre' }).click();
-  await expect(g.locator('.day-head').first()).toContainText('Dom 13 sept');
+  await expect(g.locator('.day-head').first()).toContainText('Dom 13 sept · hoy');
   await expect(g.locator('.purchase-row').first()).toContainText('coto palermo');
   await g.locator('.purchase-row').first().click();
   await page.fill('#g-place-name', 'Día Belgrano');
   await page.press('#g-place-name', 'Enter');
-  await g.getByRole('radio', { name: 'Almacén / minimercado' }).click();
+  await page.fill('#g-category', 'Almacén');
+  await page.press('#g-category', 'Enter');
   await page.click('#gastos-back');
   await expect(g.locator('.purchase-row').first()).toContainText('Día Belgrano');
-  await expect(g.locator('.purchase-row').first()).toContainText('Almacén / minimercado');
+  await expect(g.locator('.purchase-row').first()).toContainText('Almacén');
 
   // Exportar
   const dl = page.waitForEvent('download');
@@ -215,9 +218,9 @@ test('lugar escrito a mano, editable, con tipo recordado y exportación CSV del 
   const text = readFileSync(await d.path(), 'utf8');
   expect(text.charCodeAt(0)).toBe(0xfeff);
   expect(text.slice(1).trimEnd().split('\r\n')).toEqual([
-    'Fecha,Hora,Lugar,Tipo de gasto,Monto,Moneda,Artículos,Detalle',
+    'Fecha,Hora,Lugar,Categoría,Monto,Moneda,Artículos,Detalle',
     '2026-09-06,10:05,Coto Palermo,Supermercado,5350.00,ARS,2,Leche x1; Yerba x1',
-    '2026-09-13,11:00,Día Belgrano,Almacén / minimercado,1599.50,ARS,1,Arroz x1',
+    '2026-09-13,11:00,Día Belgrano,Almacén,1599.50,ARS,1,Arroz x1',
   ]);
 });
 
@@ -243,23 +246,22 @@ test('terminar compra: los lugares donde ya compraste se eligen con un toque', a
   await expect(page.locator('#finish-known')).toBeHidden();
   await page.fill('#finish-place-name', 'Coto Palermo');
   await page.locator('#finish-places').getByRole('radio', { name: 'Supermercado' }).click();
-  await expect(page.locator('#btn-finish-save')).toHaveText('Guardar en Coto Palermo');
+  await expect(page.locator('#btn-finish-save')).toHaveText('Guardar · $ 4.250');
   await page.click('#btn-finish-save');
 
   await addManual(page, { name: 'Leche', price: '1100' });
   await page.click('#btn-finish');
-  await expect(page.locator('#finish-sub')).toHaveText('1 artículo · hoy a las 10:05');
+  await expect(page.locator('#finish-sub')).toHaveText('1 artículo · agregados a las 10:05');
   await expect(page.locator('#finish-other')).toBeHidden();
-  const row = page.locator('#finish-known').getByRole('radio', { name: /Coto Palermo/ });
-  await expect(row).toContainText('Supermercado');
-  await expect(row).toContainText('1 compra');
-  await expect(page.locator('#btn-finish-save')).toHaveText('Guardar en Gastos');
+  const row = page.locator('#finish-known').getByRole('radio', { name: 'Coto Palermo' });
+  await expect(row).toHaveAttribute('aria-checked', 'false');
   await row.click();
   await expect(row).toHaveAttribute('aria-checked', 'true');
-  await expect(page.locator('#btn-finish-save')).toHaveText('Guardar en Coto Palermo');
+  // El lugar trae la categoría que usaste la última vez
+  await expect(page.locator('#finish-places').getByRole('radio', { name: 'Supermercado' })).toHaveAttribute('aria-checked', 'true');
   await page.click('#btn-finish-save');
-  const l = await page.evaluate(() => window.__compras.ledger.purchases.map((p) => [p.placeName, p.place, p.total]));
-  expect(l).toContainEqual(['Coto Palermo', 'super', 110000]);
+  const l = await page.evaluate(() => window.__compras.ledger.purchases.map((p) => [p.placeName, p.category, p.total]));
+  expect(l).toContainEqual(['Coto Palermo', 'Supermercado', 110000]);
 });
 
 test('resumen del mes: gasto por lugar y el producto que más subió', async ({ page, context }) => {
@@ -276,7 +278,7 @@ test('resumen del mes: gasto por lugar y el producto que más subió', async ({ 
   await page.click('#btn-finish-save');
   await addManual(page, { name: 'Alfajor', price: '900' });
   await page.click('#btn-finish');
-  await page.locator('#finish-known').getByRole('radio', { name: 'Otro lugar' }).click();
+  await page.locator('#finish-known').getByRole('radio', { name: 'Otro', exact: true }).click();
   await page.fill('#finish-place-name', 'Kiosco Juan');
   await page.click('#btn-finish-save');
   await page.clock.setFixedTime(at('2026-10-01T09:00:00'));
@@ -294,7 +296,7 @@ test('resumen del mes: gasto por lugar y el producto que más subió', async ({ 
   expect((await dl).suggestedFilename()).toBe('compras-2026-09.csv');
 });
 
-test('«Ya guardado» en la pantalla principal y corregir una compra de otro día', async ({ page, context }) => {
+test('lo guardado del mes arriba y corregir una compra de otro día', async ({ page, context }) => {
   const seed = {
     v: 1,
     purchases: [
@@ -312,16 +314,17 @@ test('«Ya guardado» en la pantalla principal y corregir una compra de otro dí
   }, seed);
   await openOffline(page, context);
   const saved = page.locator('#saved-line');
-  await expect(saved.locator('b')).toHaveText(['$ 1.100', '$ 6.600']);
-  await expect(saved).toHaveAttribute('aria-label', /hoy \$ 1\.100,00, en octubre \$ 6\.600,00/);
+  await expect(saved).toHaveText('Octubre · $ 6.600 guardado');
   // El carrito no cuenta como guardado
   await addManual(page, { name: 'Café', price: '9000' });
-  await expect(saved).toHaveAttribute('aria-label', /hoy \$ 1\.100,00, en octubre \$ 6\.600,00/);
+  await expect(saved).toHaveText('Octubre · $ 6.600 guardado');
 
   await saved.click();
   const g = page.locator('#sheet-gastos');
-  await expect(page.locator('#gastos-title')).toHaveText('Octubre 2026');
-  await expect(g.locator('.day-head')).toHaveText([/Mar 6 oct\s*\$ 1\.100,00/, /Dom 4 oct\s*\$ 5\.500,00/]);
+  await expect(g.locator('.mh-label')).toHaveText('Octubre 2026');
+  await expect(g.locator('#g-month-total')).toHaveText('$ 6.600,00');
+  await expect(g.locator('.day-head')).toHaveText([/Mar 6 oct · hoy\s*\$ 1\.100,00/, /Dom 4 oct\s*\$ 5\.500,00/]);
+  await expect(g.locator('.cat-legend li')).toHaveText([/Supermercado\s*\$ 5\.500/, /Kiosco\s*\$ 1\.100/]);
 
   await g.locator('.purchase-row', { hasText: 'Supermercado' }).click();
   const pan = g.locator('#g-items li', { hasText: 'Pan' });
@@ -338,6 +341,19 @@ test('«Ya guardado» en la pantalla principal y corregir una compra de otro dí
   await expect(g.locator('#g-items li')).toHaveCount(2);
   await expect(g.locator('.big-total')).toHaveText('$ 7.300,00');
 
+  // Agregar un artículo que faltó
+  await g.getByRole('button', { name: 'Agregar', exact: true }).first().click();
+  await page.fill('#g-add-name', 'Manteca');
+  await page.fill('#g-add-price', '2500');
+  await page.press('#g-add-price', 'Enter');
+  await expect(g.locator('#g-items li')).toHaveCount(3);
+  await expect(g.locator('.big-total')).toHaveText('$ 9.800,00');
+
+  // Categoría escrita a mano
+  await page.fill('#g-category', 'despensa');
+  await page.press('#g-category', 'Enter');
+  await expect(page.locator('#g-category')).toHaveValue('Despensa');
+
   // Fecha: no acepta días futuros; al cambiarla, la compra pasa a ese día con su hora
   await page.fill('#g-day', '2026-10-09');
   await expect(page.locator('#g-day')).toHaveValue('2026-10-04');
@@ -345,10 +361,40 @@ test('«Ya guardado» en la pantalla principal y corregir una compra de otro dí
   await expect(page.locator('#gastos-title')).toHaveText('Compra del lun 5 oct');
   await expect(g).toContainText('18:20–18:25');
   await page.click('#gastos-back');
-  await expect(g.locator('.day-head')).toHaveText([/Mar 6 oct/, /Lun 5 oct\s*\$ 7\.300,00/]);
+  await expect(g.locator('.day-head')).toHaveText([/Mar 6 oct/, /Lun 5 oct · ayer\s*\$ 9\.800,00/]);
+  await expect(g.locator('.cat-legend')).toContainText('Despensa');
   await page.locator('#sheet-gastos [data-close]').click();
-  await expect(saved).toHaveAttribute('aria-label', /hoy \$ 1\.100,00, en octubre \$ 8\.400,00/);
+  await expect(saved).toHaveText('Octubre · $ 10.900 guardado');
 
   await reloadSettled(page);
-  await expect(saved.locator('b')).toHaveText(['$ 1.100', '$ 8.400']);
+  await expect(saved).toHaveText('Octubre · $ 10.900 guardado');
+});
+
+test('guardar compra con fecha de ayer y una categoría nueva escrita a mano', async ({ page, context }) => {
+  await page.clock.setFixedTime(at('2026-10-06T19:00:00'));
+  await openOffline(page, context);
+  await addManual(page, { name: 'Alimento balanceado', price: '15000' });
+  await page.click('#btn-finish');
+  await page.locator('#finish-days').getByRole('radio', { name: 'Ayer' }).click();
+  await expect(page.locator('#finish-days').getByRole('radio', { name: 'Ayer' })).toHaveAttribute('aria-checked', 'true');
+  await page.locator('#finish-places').getByRole('radio', { name: 'Escribir' }).click();
+  await page.fill('#finish-cat-input', 'mascotas');
+  await page.click('#finish-cat-add');
+  await expect(page.locator('#finish-places').getByRole('radio', { name: 'Mascotas' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('#finish-cat-new')).toBeHidden();
+  await page.click('#btn-finish-save');
+  await expect(page.locator('#toast-host .toast')).toContainText('Guardamos la compra del lun 5 oct en Gastos ($ 15.000,00)');
+  const l = await page.evaluate(() => window.__compras.ledger.purchases.map((p) => [p.day, p.category, p.total]));
+  expect(l).toEqual([['2026-10-05', 'Mascotas', 1500000]]);
+
+  // La categoría nueva queda para la próxima
+  await addManual(page, { name: 'Piedras', price: '3000' });
+  await page.click('#btn-finish');
+  await expect(page.locator('#finish-places .pill').first()).toHaveText('Mascotas');
+  // Otra fecha
+  await page.locator('#finish-days').getByRole('radio', { name: 'Otra fecha' }).click();
+  await page.fill('#finish-date', '2026-10-01');
+  await expect(page.locator('#finish-days').getByRole('radio', { name: 'Jue 1 oct' })).toHaveAttribute('aria-checked', 'true');
+  await page.click('#btn-finish-save');
+  expect(await page.evaluate(() => window.__compras.ledger.purchases.map((p) => p.day))).toEqual(['2026-10-05', '2026-10-01']);
 });

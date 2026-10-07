@@ -1,7 +1,7 @@
 import { formatMoney, parseMoneyInput, centsToInput, formatPercent } from './money.js';
 import { loadJSON, saveJSON } from './storage.js';
 import { emptyList, sanitizeList, totals, findSame, newId } from './list.js';
-import { budgetState, PERIODS, PERIOD_LABEL } from './budget.js';
+import { budgetState, PERIODS } from './budget.js';
 import { cameraSupported, startCamera, stopCamera, grabFrame, torchSupported, setTorch, cameraErrorText } from './camera.js';
 import {
   emptyLedger,
@@ -25,14 +25,15 @@ import {
   setPurchaseItem,
   removePurchaseItem,
   monthDays,
-  setPlace,
+  addPurchaseItem,
+  setCategory,
   setPlaceName,
   knownPlaces,
-  placeTypeFor,
+  knownCategories,
+  categoryFor,
+  cleanCategory,
   monthCSV,
   placeBreakdown,
-  PLACES,
-  PLACE_LABEL,
 } from './ledger.js';
 import {
   emptyStore,
@@ -106,7 +107,6 @@ function fmtRange(a, b) {
 
 const el = {
   card: $('#total-card'),
-  label: $('#total-label'),
   limitBtn: $('#btn-limit'),
   amount: $('#total-amount'),
   meta: $('#total-meta'),
@@ -115,8 +115,16 @@ const el = {
   limitMark: $('#limit-mark'),
   limitText: $('#limit-text'),
   limitPeriod: $('#limit-period'),
+  limitSaved: $('#limit-saved'),
+  limitChipText: $('#limit-chip-text'),
+  totalSide: $('#total-side'),
+  statSaved: $('#stat-saved'),
+  savedToday: $('#saved-today'),
+  cartCount: $('#cart-count'),
+  listFoot: $('#list-foot'),
+  finishPill: $('#btn-finish'),
+  finishPillTotal: $('#finish-pill-total'),
   list: $('#list'),
-  listHead: $('#list-head'),
   empty: $('#empty'),
   filePhoto: $('#file-photo'),
   fileCode: $('#file-code'),
@@ -146,10 +154,10 @@ const el = {
   limitInput: $('#f-limit'),
   limitErr: $('#limit-err'),
   confirm: $('#dlg-confirm'),
-  sheetHistory: $('#sheet-history'),
+  sheetHistory: $('#sheet-gastos'),
   histBody: $('#hist-body'),
-  histBack: $('#hist-back'),
-  histTitle: $('#history-title'),
+  histBack: $('#gastos-back'),
+  histTitle: $('#gastos-title'),
   toastHost: $('#toast-host'),
 };
 
@@ -296,17 +304,23 @@ function render() {
   renderedDay = dayKey(Date.now());
   el.limitBox.hidden = !b;
   el.limitText.hidden = !b;
+  el.totalSide.hidden = !b;
+  el.statSaved.hidden = !b;
   el.card.classList.toggle('has-limit', !!b);
   el.card.classList.toggle('over', !!b?.over);
-  el.label.textContent = b ? 'Carrito' : 'Total';
-  el.limitBtn.textContent = b ? `${PERIOD_LABEL[b.period]} ${shortMoney(b.limit)}` : 'Poner límite';
+  el.limitChipText.textContent = b ? `${shortMoney(b.limit)} / ${PERIOD_UNIT[b.period]}` : 'Poner límite';
+  el.limitBtn.setAttribute('aria-label', b ? `Límite: ${formatMoney(b.limit)} por ${PERIOD_UNIT[b.period]}. Cambiar` : 'Poner un límite de gasto');
   el.limitPeriod.hidden = true;
   if (b) {
     const scale = Math.max(b.daily, b.spentToday) || 1;
-    el.limitFill.style.width = `${Math.min(100, (b.spentToday / scale) * 100)}%`;
+    el.limitSaved.style.width = `${Math.min(100, (b.savedToday / scale) * 100)}%`;
+    el.limitFill.style.left = el.limitSaved.style.width;
+    el.limitFill.style.width = `${Math.min(100, (t.cents / scale) * 100)}%`;
     el.limitMark.style.left = `${(b.daily / scale) * 100}%`;
     el.limitBox.classList.toggle('near', !b.over && b.daily > 0 && b.spentToday >= b.daily * 0.9);
     el.limitText.innerHTML = `<span class="lt-kicker">${b.over ? 'Hoy te pasaste por' : 'Te quedan hoy'}</span> <span class="lt-amount">${esc(formatMoney(b.over ? b.excess : b.remaining))}</span>`;
+    el.totalSide.textContent = b.daily > 0 ? `${Math.round((b.spentToday / b.daily) * 100)} % usado` : '';
+    el.savedToday.textContent = formatMoney(b.savedToday);
     const lines = periodLines(b);
     el.limitPeriod.hidden = !lines.length;
     el.limitPeriod.innerHTML = lines.map((l) => `<span${l.bad ? ' class="bad"' : ''}>${esc(l.text)}</span>`).join('');
@@ -314,33 +328,36 @@ function render() {
   renderCamTotal();
   renderSaved();
 
-  el.empty.hidden = list.items.length > 0;
-  el.listHead.hidden = list.items.length === 0;
+  const has = list.items.length > 0;
+  el.empty.hidden = has;
+  el.listFoot.hidden = !has;
+  el.cartCount.textContent = has ? String(t.count) : '';
+  el.finishPill.hidden = !has;
+  el.finishPillTotal.textContent = shortMoney(t.cents);
+  document.body.classList.toggle('has-cart', has);
   el.list.innerHTML = list.items.map(itemHTML).join('');
 }
 
-// Lo ya guardado en Gastos (sin el carrito): para ver de un vistazo si una compra ya se cargó.
+// Arriba de todo, lo ya guardado en el mes (sin el carrito): para ver de un vistazo si una compra ya se cargó.
 function renderSaved() {
   const now = Date.now();
   const mk = monthKey(now);
-  const today = dayKey(now);
   const m = monthTotals(ledger, mk);
-  const todayCents = m.purchases.filter((p) => p.day === today).reduce((s, p) => s + p.total, 0);
-  const saved = $('#saved-line');
-  saved.hidden = !m.count;
-  if (!m.count) return;
   const month = monthLabel(mk).split(' ')[0];
-  saved.innerHTML = `<span class="sl-stat"><span>Guardado hoy</span><b>${esc(shortMoney(todayCents))}</b></span>
-    <span class="sl-stat"><span>En ${esc(month)}</span><b>${esc(shortMoney(m.total))}</b></span>
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>`;
-  saved.setAttribute('aria-label', `Ya guardado: hoy ${formatMoney(todayCents)}, en ${month} ${formatMoney(m.total)}. Ver gastos del mes`);
+  const Month = month[0].toUpperCase() + month.slice(1);
+  const saved = $('#saved-line');
+  saved.innerHTML = m.count
+    ? `${esc(Month)} · <b>${esc(shortMoney(m.total))}</b> guardado<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>`
+    : `${esc(Month)} · sin gastos guardados<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>`;
+  saved.setAttribute('aria-label', `${Month}: ${m.count ? `${formatMoney(m.total)} guardado` : 'sin gastos guardados'}. Ver gastos del mes`);
 }
 
+const PERIOD_UNIT = { day: 'día', week: 'semana', month: 'mes' };
 const shortMoney = (c) => formatMoney(c).replace(/,00$/, '');
 const PERIOD_OF = { week: 'de la semana', month: 'del mes' };
 
 function periodLines(b) {
-  if (b.period === 'day') return b.savedToday ? [{ text: `Incluye ${formatMoney(b.savedToday)} ya guardados hoy` }] : [];
+  if (b.period === 'day') return [];
   const noun = b.period === 'week' ? 'Semana' : 'Mes';
   const left = b.daysLeft > 1 ? `quedan ${b.daysLeft} días` : 'último día';
   const lines = [{ text: `Sugerido para hoy ${shortMoney(b.daily)} · ${left}` }];
@@ -731,6 +748,7 @@ function pickFile(input, kind, keep) {
 }
 
 $('#btn-scan').addEventListener('click', () => openCamera('scan', false));
+$('#tab-compra').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 $('#btn-item-photo').addEventListener('click', () => openCamera('photo', true));
 $('#btn-item-code').addEventListener('click', () => openCamera('code', true));
 $('#btn-manual').addEventListener('click', () => {
@@ -1186,15 +1204,6 @@ function scanToSheet() {
 // ---------- Historial de precios ----------
 let histView = { mode: 'list', key: null, q: '' };
 
-$('#btn-history').addEventListener('click', () => {
-  histView = { mode: 'list', key: null, q: '' };
-  renderHistory();
-  openDialog(el.sheetHistory);
-});
-el.histBack.addEventListener('click', () => {
-  histView = { mode: 'list', key: null, q: histView.q };
-  renderHistory();
-});
 
 function productTitle(p) {
   return p.name || (p.code ? `Código ${p.code}` : 'Producto');
@@ -1205,11 +1214,14 @@ function changeTag(ch) {
   return '<span class="tag neutral">sin cambios</span>';
 }
 
-function renderHistory() {
+// El historial vive en la pestaña «Precios» de Gastos: cualquier refresco pasa por la pantalla entera.
+const renderHistory = () => renderGastosScreen();
+
+function renderHistoryPane() {
   if (histView.mode === 'detail' && hist.products[histView.key]) return renderHistDetail(hist.products[histView.key]);
   histView.mode = 'list';
   el.histBack.hidden = true;
-  el.histTitle.textContent = 'Historial de precios';
+  el.histTitle.textContent = 'Gastos';
   const s = summary(hist);
   if (!s.total) {
     el.histBody.innerHTML = `<div class="hist-empty"><p><strong>Todavía no hay precios guardados.</strong></p><p>Se guardan solos cuando agregás artículos con nombre o código.</p></div>`;
@@ -1393,7 +1405,7 @@ function renderHistDetail(p) {
 function restoreHist(before, key) {
   hist = before;
   saveHist();
-  if (el.sheetHistory.open) {
+  if (el.sheetHistory.open && gTab === 'precios') {
     histView = { mode: 'detail', key, q: histView.q };
     renderHistory();
   }
@@ -1416,144 +1428,189 @@ const dayLabel = (day) => {
   const d = dayDate(day);
   return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 };
-const relDay = (day) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diff = Math.round((today - dayDate(day)) / 86_400_000);
-  return diff === 0 ? 'Hoy' : diff === 1 ? 'Ayer' : cap(dayLabel(day));
-};
 const timeRange = (p) => (p.start && p.end ? (hhmm(p.start) === hhmm(p.end) ? hhmm(p.start) : `${hhmm(p.start)}–${hhmm(p.end)}`) : '');
 const pctSpan = (pct, vs) =>
   pct == null ? '' : `<span class="${pct > 0 ? 'up' : pct < 0 ? 'down' : ''}">${pct > 0 ? '▲' : pct < 0 ? '▼' : '='} ${esc(formatPercent(pct))} vs ${esc(vs)}</span>`;
 const monthName = (mk) => monthLabel(mk).split(' ')[0];
 
-// Terminar compra: primero los lugares donde ya compraste (un toque); «Otro lugar» para escribir uno nuevo.
-let finishPlace = '';
-let finishSel = null; // índice de un lugar frecuente, 'other' o null
-let finishKnown = [];
+// Guardar compra: fecha, lugar y categoría con un toque; «Otro» y «Escribir» para lo nuevo.
 const sheetFinish = $('#sheet-finish');
 const finishName = $('#finish-place-name');
 const finishSave = $('#btn-finish-save');
-
-let finishPlacePicked = false; // la persona eligió el tipo a mano: no lo pisamos al escribir el lugar
+const finishDate = $('#finish-date');
+const finishCatInput = $('#finish-cat-input');
+let fin = null;
 
 function fillKnownPlaces() {
   $('#known-places').innerHTML = knownPlaces(ledger)
     .slice(0, 100)
     .map((p) => `<option value="${esc(p.name)}"></option>`)
     .join('');
+  $('#known-cats').innerHTML = knownCategories(ledger)
+    .slice(0, 100)
+    .map((c) => `<option value="${esc(c)}"></option>`)
+    .join('');
 }
+
+const pill = (label, on, attrs = '', cls = 'pill') =>
+  `<button type="button" class="${cls}" role="radio" aria-checked="${on}" ${attrs}>${label}</button>`;
+const ICON_CAL = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2.5" /><path d="M4 10h16M8.5 3v4M15.5 3v4" /></svg>';
+const ICON_PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>';
+const ICON_PEN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z" /></svg>';
 
 $('#btn-finish').addEventListener('click', () => {
   if (!list.items.length) return;
-  finishPlace = '';
-  finishPlacePicked = false;
+  const known = knownPlaces(ledger).slice(0, 4);
+  fin = { day: 'hoy', date: '', known, place: known.length ? null : 'other', category: '', catPicked: false, adding: false, extra: [] };
   finishName.value = '';
-  finishKnown = knownPlaces(ledger).slice(0, 4);
-  finishSel = finishKnown.length ? null : 'other';
+  finishCatInput.value = '';
+  finishDate.value = '';
   fillKnownPlaces();
   renderFinish();
   openDialog(sheetFinish);
 });
 
-finishName.addEventListener('input', () => {
-  updateFinishSave();
-  if (finishPlacePicked) return;
-  const t = placeTypeFor(ledger, finishName.value);
-  if (t && t !== finishPlace) {
-    finishPlace = t;
-    $('#finish-places').innerHTML = placeChips(finishPlace);
-  }
-});
-
-function placeChips(selected) {
-  return PLACES.map(
-    (p) => `<button type="button" class="chip" role="radio" aria-checked="${p.id === selected}" data-place="${p.id}">${esc(p.label)}</button>`,
-  ).join('');
-}
-
-function updateFinishSave() {
-  const name = finishName.value.replace(/\s+/g, ' ').trim();
-  finishSave.textContent = name ? `Guardar en ${name}` : 'Guardar en Gastos';
+function finishDay() {
+  const now = new Date();
+  if (fin.day === 'ayer') return dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+  if (fin.day === 'otra' && /^\d{4}-\d{2}-\d{2}$/.test(fin.date) && fin.date <= dayKey(now)) return fin.date;
+  return '';
 }
 
 function renderFinish() {
   const trips = groupTrips(list.items, Date.now());
   const t = totals(list);
   $('#finish-total').textContent = formatMoney(t.cents);
-  const one = trips.length === 1 ? trips[0] : null;
-  const when = one ? (hhmm(one.start) === hhmm(one.end) ? ` a las ${hhmm(one.start)}` : ` de ${hhmm(one.start)} a ${hhmm(one.end)}`) : '';
-  $('#finish-sub').textContent = `${plural(t.count, 'artículo', 'artículos')}${one ? ` · ${relDay(one.day).toLowerCase()}${when}` : ''}`;
+  const first = trips[0];
+  const last = trips[trips.length - 1];
+  const when = hhmm(first.start) === hhmm(last.end) ? `a las ${hhmm(first.start)}` : `de ${hhmm(first.start)} a ${hhmm(last.end)}`;
+  $('#finish-sub').textContent = `${plural(t.count, 'artículo', 'artículos')} · agregados ${when}`;
   $('#finish-trips').innerHTML = trips
     .map((g) => {
       const total = g.items.reduce((sum, it) => sum + it.cents * it.qty, 0);
       const range = hhmm(g.start) === hhmm(g.end) ? hhmm(g.start) : `${hhmm(g.start)}–${hhmm(g.end)}`;
-      return `<li><span>${esc(relDay(g.day))} · ${esc(range)} · ${plural(g.items.length, 'artículo', 'artículos')}</span><span>${esc(formatMoney(total))}</span></li>`;
+      return `<li><span>${esc(range)} · ${plural(g.items.length, 'artículo', 'artículos')}</span><span>${esc(formatMoney(total))}</span></li>`;
     })
     .join('');
-  $('#finish-trips').hidden = trips.length < 2;
-  renderFinishPlaces();
+  $('#finish-trips').hidden = trips.length < 2 || fin.day !== 'hoy';
+
+  const otherDay = finishDay();
+  $('#finish-days').innerHTML =
+    pill('Hoy', fin.day === 'hoy', 'data-day="hoy"') +
+    pill('Ayer', fin.day === 'ayer', 'data-day="ayer"') +
+    pill(`${ICON_CAL}${fin.day === 'otra' && otherDay ? esc(cap(dayLabel(otherDay))) : 'Otra fecha'}`, fin.day === 'otra', 'data-day="otra"');
+  finishDate.hidden = fin.day !== 'otra';
+  finishDate.max = dayKey(Date.now());
+
+  $('#finish-known').innerHTML =
+    fin.known.map((k, i) => pill(esc(k.name), fin.place === i, `data-sel="${i}"`)).join('') +
+    (fin.known.length ? pill(`${ICON_PLUS}Otro`, fin.place === 'other', 'data-sel="other"', 'pill dashed') : '');
+  $('#finish-known').hidden = !fin.known.length;
+  $('#finish-other').hidden = fin.place !== 'other';
+  renderFinishCats();
 }
 
-function renderFinishPlaces() {
-  const known = $('#finish-known');
-  known.hidden = !finishKnown.length;
-  known.innerHTML = finishKnown.length
-    ? finishKnown
-        .map(
-          (k, i) => `<button type="button" class="place-row" role="radio" aria-checked="${finishSel === i}" data-sel="${i}">
-        <span class="pr-name">${esc(k.name)}</span>
-        <span class="pr-sub">${esc(PLACE_LABEL[k.place] || 'Sin tipo')}</span>
-        <span class="pr-count">${plural(k.count, 'compra', 'compras')}</span>
-      </button>`,
-        )
-        .join('') +
-      `<button type="button" class="place-row other" role="radio" aria-checked="${finishSel === 'other'}" data-sel="other">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg><span class="pr-name">Otro lugar</span>
-      </button>`
-    : '';
-  $('#finish-other').hidden = finishSel !== 'other';
-  $('#finish-places').innerHTML = placeChips(finishPlace);
+function renderFinishCats() {
+  const cats = knownCategories(ledger, fin.extra).slice(0, 8);
+  if (fin.category && !cats.some((c) => c.toLowerCase() === fin.category.toLowerCase())) cats.push(fin.category);
+  $('#finish-places').innerHTML =
+    cats.map((c) => pill(esc(c), fin.category === c, `data-cat="${esc(c)}"`)).join('') +
+    pill(`${ICON_PEN}Escribir`, fin.adding, 'data-cat-new="1"');
+  $('#finish-cat-new').hidden = !fin.adding;
   updateFinishSave();
 }
+
+function finishPlaceName() {
+  return typeof fin.place === 'number' ? fin.known[fin.place].name : fin.place === 'other' ? finishName.value : '';
+}
+
+function updateFinishSave() {
+  finishSave.textContent = `Guardar · ${shortMoney(totals(list).cents)}`;
+}
+
+$('#finish-days').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-day]');
+  if (!b) return;
+  fin.day = b.dataset.day;
+  renderFinish();
+  if (fin.day === 'otra') {
+    finishDate.focus();
+    try {
+      finishDate.showPicker?.();
+    } catch {}
+  }
+});
+finishDate.addEventListener('change', () => {
+  fin.date = finishDate.value;
+  renderFinish();
+});
 
 $('#finish-known').addEventListener('click', (e) => {
   const b = e.target.closest('[data-sel]');
   if (!b) return;
   const sel = b.dataset.sel === 'other' ? 'other' : Number(b.dataset.sel);
-  if (sel === finishSel && sel !== 'other') finishSel = null;
-  else finishSel = sel;
-  finishPlacePicked = false;
-  if (typeof finishSel === 'number') {
-    finishName.value = finishKnown[finishSel].name;
-    finishPlace = finishKnown[finishSel].place;
-  } else {
-    finishName.value = '';
-    finishPlace = '';
+  fin.place = sel === fin.place && sel !== 'other' ? null : sel;
+  if (typeof fin.place === 'number' && !fin.catPicked && fin.known[fin.place].category) fin.category = fin.known[fin.place].category;
+  renderFinish();
+  if (fin.place === 'other') finishName.focus();
+});
+
+finishName.addEventListener('input', () => {
+  if (fin.catPicked) return;
+  const c = categoryFor(ledger, finishName.value);
+  if (c && c !== fin.category) {
+    fin.category = c;
+    renderFinishCats();
   }
-  renderFinishPlaces();
-  if (finishSel === 'other') finishName.focus();
 });
 
 $('#finish-places').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-place]');
+  const b = e.target.closest('[data-cat], [data-cat-new]');
   if (!b) return;
-  finishPlace = finishPlace === b.dataset.place ? '' : b.dataset.place;
-  finishPlacePicked = true;
-  $('#finish-places').innerHTML = placeChips(finishPlace);
+  if (b.dataset.catNew) {
+    fin.adding = !fin.adding;
+    renderFinishCats();
+    if (fin.adding) finishCatInput.focus();
+    return;
+  }
+  fin.category = fin.category === b.dataset.cat ? '' : b.dataset.cat;
+  fin.catPicked = true;
+  renderFinishCats();
+});
+
+function addFinishCat() {
+  const v = cleanCategory(finishCatInput.value);
+  if (!v) return finishCatInput.focus();
+  const found = knownCategories(ledger, fin.extra).find((c) => c.toLowerCase() === v.toLowerCase());
+  if (!found) fin.extra.unshift(v);
+  fin.category = found || v;
+  fin.catPicked = true;
+  fin.adding = false;
+  finishCatInput.value = '';
+  renderFinishCats();
+}
+$('#finish-cat-add').addEventListener('click', addFinishCat);
+finishCatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    addFinishCat();
+  }
 });
 
 $('#finish-form').addEventListener('submit', (e) => {
   e.preventDefault();
   if (!list.items.length) return sheetFinish.close();
+  // Una categoría escrita pero sin tocar «Agregar» también cuenta
+  if (fin.adding && cleanCategory(finishCatInput.value)) addFinishCat();
   const before = { ledger, items: list.items };
   const total = totals(list).cents;
-  ledger = archiveItems(ledger, list.items, { place: finishPlace, placeName: finishName.value, now: Date.now() }).ledger;
+  const day = finishDay();
+  ledger = archiveItems(ledger, list.items, { placeName: finishPlaceName(), category: fin.category, day, now: Date.now() }).ledger;
   list.items = [];
   saveLedger();
   sheetFinish.close();
   commit();
-  toast(`Guardamos la compra en Gastos (${formatMoney(total)})`, {
+  toast(`Guardamos la compra${day ? ` del ${dayLabel(day)}` : ''} en Gastos (${formatMoney(total)})`, {
     action: 'Deshacer',
     onAction: () => {
       ledger = before.ledger;
@@ -1685,40 +1742,94 @@ $('#recap-see').addEventListener('click', () => {
   openGastos({ mode: 'month', year: Number(mk.slice(0, 4)), month: mk });
 });
 
-// Pantalla de gastos
+// Pantalla de gastos (pantalla completa, con la pestaña «Precios»)
 const sheetGastos = $('#sheet-gastos');
 const gBody = $('#gastos-body');
-let gv = { mode: 'year', year: new Date().getFullYear(), month: null, id: null };
+const curMonth = () => monthKey(Date.now());
+let gv = { mode: 'month', year: new Date().getFullYear(), month: curMonth(), id: null };
+let gTab = 'mes';
+
+const ICON_PIN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.7-6.5-11a6.5 6.5 0 0 1 13 0c0 5.3-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.3" /></svg>';
+const ICON_CAT = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="13" y="4" width="7" height="7" rx="2" /><rect x="4" y="13" width="7" height="7" rx="2" /><path d="M16.5 13.5v6M13.5 16.5h6" /></svg>';
+const ICON_TRASH = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 11v6M14 11v6M6.5 7l.8 11.2a2 2 0 0 0 2 1.8h5.4a2 2 0 0 0 2-1.8L17.5 7M9.5 7V5.5a1.5 1.5 0 0 1 1.5-1.5h2a1.5 1.5 0 0 1 1.5 1.5V7" /></svg>';
+const ICON_LEFT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>';
+const ICON_RIGHT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>';
 
 $('#btn-gastos').addEventListener('click', () => openGastos());
-$('#saved-line').addEventListener('click', () => {
-  const mk = monthKey(Date.now());
-  openGastos({ mode: 'month', year: Number(mk.slice(0, 4)), month: mk, id: null });
+$('#saved-line').addEventListener('click', () => openGastos());
+$('#gastos-scan').addEventListener('click', () => {
+  sheetGastos.close();
+  openCamera('scan', false);
 });
+$('#g-tab-mes').addEventListener('click', () => {
+  gTab = 'mes';
+  renderGastosScreen();
+});
+$('#g-tab-precios').addEventListener('click', () => {
+  gTab = 'precios';
+  histView = { mode: 'list', key: null, q: histView.q };
+  renderGastosScreen();
+});
+$('#g-export').addEventListener('click', () => exportMonth(gv.month));
 $('#gastos-back').addEventListener('click', () => {
-  if (gv.mode === 'purchase') gv = { ...gv, mode: 'month', id: null };
-  else gv = { ...gv, mode: 'year', month: null };
-  renderGastos();
+  if (gTab === 'precios') histView = { mode: 'list', key: null, q: histView.q };
+  else gv = { ...gv, mode: 'month', id: null };
+  renderGastosScreen();
 });
 
 function openGastos(view) {
-  gv = view || { mode: 'year', year: new Date().getFullYear(), month: null, id: null };
-  renderGastos();
+  const mk = curMonth();
+  gv = view || { mode: 'month', year: Number(mk.slice(0, 4)), month: mk, id: null };
+  gTab = 'mes';
+  renderGastosScreen();
   openDialog(sheetGastos);
 }
 
+function renderGastosScreen() {
+  const precios = gTab === 'precios';
+  $('#g-tab-mes').setAttribute('aria-selected', String(!precios));
+  $('#g-tab-precios').setAttribute('aria-selected', String(precios));
+  gBody.hidden = precios;
+  el.histBody.hidden = !precios;
+  $('#g-export').hidden = true;
+  if (precios) renderHistoryPane();
+  else renderGastosPane();
+  $('#gastos-tabs').hidden = precios ? histView.mode === 'detail' : gv.mode === 'purchase';
+}
+const renderGastos = () => renderGastosScreen();
+
 function inProgress() {
-  return list.items.length ? { month: monthKey(Date.now()), cents: totals(list).cents } : null;
+  return list.items.length ? { month: curMonth(), cents: totals(list).cents } : null;
 }
 
-function renderGastos() {
+function renderGastosPane() {
   gBody.scrollTop = 0;
   if (gv.mode === 'purchase' && ledger.purchases.some((p) => p.id === gv.id)) return renderPurchase();
-  if (gv.mode === 'month' || gv.mode === 'purchase') {
-    gv.mode = 'month';
-    return renderMonth();
+  if (gv.mode === 'year') return renderYear();
+  gv.mode = 'month';
+  gv.month = gv.month || curMonth();
+  renderMonth();
+}
+
+function nextMonthKey(mk) {
+  let [y, m] = mk.split('-').map(Number);
+  m++;
+  if (m > 12) {
+    m = 1;
+    y++;
   }
-  renderYear();
+  return `${y}-${String(m).padStart(2, '0')}`;
+}
+
+// Colores de las categorías: se distinguen también por luminosidad, no solo por el tono
+const CAT_TONES = 5;
+function categoryRanking(byCategory) {
+  const rows = Object.entries(byCategory)
+    .map(([name, total]) => ({ name: name || 'Sin categoría', total }))
+    .sort((a, b) => b.total - a.total);
+  if (rows.length <= CAT_TONES) return rows;
+  const rest = rows.slice(CAT_TONES - 1).reduce((sum, r) => sum + r.total, 0);
+  return [...rows.slice(0, CAT_TONES - 1), { name: 'Otras', total: rest }];
 }
 
 function barsSVG(y) {
@@ -1750,7 +1861,7 @@ function barsSVG(y) {
 }
 
 function renderYear() {
-  $('#gastos-back').hidden = true;
+  $('#gastos-back').hidden = false;
   $('#gastos-title').textContent = 'Gastos';
   const now = Date.now();
   const ys = years(ledger, now);
@@ -1763,7 +1874,7 @@ function renderYear() {
       const prev = monthTotals(ledger, prevMonthKey(m.month));
       const pct = prev.count && prev.total && m.count ? ((m.total - prev.total) / prev.total) * 100 : null;
       const state = m.closed ? 'cerrado' : m.month === monthKey(now) ? 'en curso' : '';
-      const sub = [plural(m.count, 'compra', 'compras'), state, m.inProgress ? `${formatMoney(m.inProgress)} sin guardar` : ''].filter(Boolean).join(' · ');
+      const sub = [plural(m.count, 'compra', 'compras'), state, m.inProgress ? `${shortMoney(m.inProgress)} sin guardar` : ''].filter(Boolean).join(' · ');
       return `<li><button type="button" class="month-row" data-month="${m.month}">
         <span class="row-title">${esc(monthName(m.month))}</span>
         <span class="row-amount">${esc(formatMoney(m.total + m.inProgress))}</span>
@@ -1774,14 +1885,14 @@ function renderYear() {
     .join('');
   gBody.innerHTML = `
     <div class="year-nav">
-      <button type="button" class="icon-btn" id="g-prev" aria-label="Año anterior" ${gv.year <= ys[0] ? 'disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg></button>
+      <button type="button" class="icon-btn" id="g-prev" aria-label="Año anterior" ${gv.year <= ys[0] ? 'disabled' : ''}>${ICON_LEFT}</button>
       <b id="g-year">${gv.year}</b>
-      <button type="button" class="icon-btn" id="g-next" aria-label="Año siguiente" ${gv.year >= thisYear ? 'disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg></button>
+      <button type="button" class="icon-btn" id="g-next" aria-label="Año siguiente" ${gv.year >= thisYear ? 'disabled' : ''}>${ICON_RIGHT}</button>
     </div>
-    <div class="big-total" id="g-total">${esc(formatMoney(y.total))}</div>
-    <p class="sub-line">${plural(y.count, 'compra guardada', 'compras guardadas')}${y.monthsWithData ? ` · promedio ${esc(formatMoney(y.average))} por mes (${plural(y.monthsWithData, 'mes', 'meses')} con compras)` : ''}</p>
-    <div class="chart bars">${barsSVG(y)}</div>
-    ${rows ? `<h3 class="section-title">Meses</h3><ul class="prods">${rows}</ul>` : `<div class="hist-empty"><p><strong>Todavía no hay compras guardadas en ${gv.year}.</strong></p><p>Cuando tocás «Terminar compra», o al día siguiente, la compra se guarda acá con su fecha.</p></div>`}`;
+    <div class="big-total center" id="g-total">${esc(formatMoney(y.total))}</div>
+    <p class="sub-line center">${plural(y.count, 'compra guardada', 'compras guardadas')}${y.monthsWithData ? ` · promedio ${esc(formatMoney(y.average))} por mes (${plural(y.monthsWithData, 'mes', 'meses')} con compras)` : ''}</p>
+    <div class="card chart bars">${barsSVG(y)}</div>
+    ${rows ? `<h3 class="section-title">Meses</h3><ul class="card prods rows">${rows}</ul>` : `<div class="hist-empty"><p><strong>Todavía no hay compras guardadas en ${gv.year}.</strong></p><p>Cuando tocás «Guardar compra», o al día siguiente, la compra se guarda acá con su fecha.</p></div>`}`;
   $('#g-prev').onclick = () => {
     gv.year--;
     renderGastos();
@@ -1798,86 +1909,125 @@ function renderYear() {
 
 function renderMonth() {
   const mk = gv.month;
-  $('#gastos-back').hidden = false;
-  $('#gastos-title').textContent = cap(monthLabel(mk));
+  $('#gastos-back').hidden = true;
+  $('#gastos-title').textContent = 'Gastos';
   const sum = closeSummary(ledger, mk);
-  const t = monthTotals(ledger, mk);
   const prog = inProgress();
-  const closed = isClosed(ledger, mk);
+  const isCur = mk >= curMonth();
+  const first = ledger.purchases.reduce((m, p) => (p.day.slice(0, 7) < m ? p.day.slice(0, 7) : m), curMonth());
   const closeRec = ledger.closes.find((c) => c.month === mk);
-  const state = closed ? `Cerrado el ${fmtDate(closeRec.closedAt)}` : mk === monthKey(Date.now()) ? 'En curso' : '';
-  const places = Object.entries(sum.byPlace).sort((a, b) => b[1] - a[1]);
-  const maxPlace = Math.max(1, ...places.map((x) => x[1]));
+  const exp = $('#g-export');
+  exp.hidden = !sum.count;
+  exp.setAttribute('aria-label', `Exportar ${monthName(mk)} (CSV)`);
+  const cats = categoryRanking(sum.byCategory);
+  const tone = new Map(cats.map((c, i) => [c.name.toLowerCase(), i]));
+  const today = dayKey(Date.now());
+  const yesterday = dayKey(Date.now() - 86_400_000);
+  const days = monthDays(ledger, mk);
   gBody.innerHTML = `
-    <div class="big-total">${esc(formatMoney(sum.total))}</div>
-    <p class="sub-line">${[plural(sum.count, 'compra', 'compras'), state].filter(Boolean).map(esc).join(' · ')}${sum.pct != null ? ` · ${pctSpan(sum.pct, monthName(prevMonthKey(mk)))}` : ''}</p>
-    ${prog && prog.month === mk ? `<p class="sub-line">Más ${esc(formatMoney(prog.cents))} de la lista actual, todavía sin guardar.</p>` : ''}
-    ${t.purchases.length ? `<button type="button" class="btn small secondary export-btn" id="g-export"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14" /></svg>Exportar ${esc(monthName(mk))} (CSV)</button>` : ''}
-    ${places.length ? `<h3 class="section-title">Por tipo de gasto</h3><ul class="place-bars">${places
-      .map(
-        ([id, c]) =>
-          `<li><span>${esc(PLACE_LABEL[id] || 'Sin especificar')}</span><b>${esc(formatMoney(c))}</b><span class="track"><span class="fill" style="width:${((c / maxPlace) * 100).toFixed(1)}%"></span></span></li>`,
-      )
-      .join('')}</ul>` : ''}
-    <h3 class="section-title">Por día</h3>
-    ${t.purchases.length ? monthDays(ledger, mk)
-      .map(
-        (d) => `<div class="day-head"><span>${esc(cap(dayLabel(d.day)))}</span><b>${esc(formatMoney(d.total))}</b></div>
-        <ul class="prods">${d.purchases
-          .map(
-            (p) => `<li><button type="button" class="purchase-row" data-id="${esc(p.id)}">
-        <span class="row-title">${esc(p.placeName || PLACE_LABEL[p.place] || 'Sin especificar')}</span>
-        <span class="row-amount">${esc(formatMoney(p.total))}</span>
-        <span class="row-sub">${esc([p.placeName ? PLACE_LABEL[p.place] || 'Sin tipo' : '', timeRange(p), plural(p.items.length, 'artículo', 'artículos'), p.auto ? 'guardada sola' : ''].filter(Boolean).join(' · '))}</span>
-      </button></li>`,
-          )
-          .join('')}</ul>`,
-      )
-      .join('') : '<p class="muted">No hay compras guardadas este mes.</p>'}`;
+    <div class="month-nav">
+      <button type="button" class="icon-btn" id="g-mprev" aria-label="Mes anterior" ${prevMonthKey(mk) < first ? 'disabled' : ''}>${ICON_LEFT}</button>
+      <button type="button" class="month-hero" id="g-myear" aria-label="${esc(`${cap(monthLabel(mk))}: ${formatMoney(sum.total)}. Ver el año`)}">
+        <span class="mh-label">${esc(cap(monthLabel(mk)))}${closeRec ? ' · cerrado' : ''}</span>
+        <span class="mh-total" id="g-month-total">${esc(formatMoney(sum.total))}</span>
+        <span class="mh-sub">${plural(sum.count, 'compra', 'compras')}${sum.pct != null ? ` · ${pctSpan(sum.pct, MONTHS[Number(prevMonthKey(mk).slice(5)) - 1])}` : ''}</span>
+      </button>
+      <button type="button" class="icon-btn" id="g-mnext" aria-label="Mes siguiente" ${isCur ? 'disabled' : ''}>${ICON_RIGHT}</button>
+    </div>
+    ${prog && prog.month === mk ? `<p class="sub-line center">Más ${esc(formatMoney(prog.cents))} en el carrito, todavía sin guardar.</p>` : ''}
+    ${
+      cats.length
+        ? `<section class="card cat-card" aria-label="Por categoría">
+      <div class="cat-bar" aria-hidden="true">${cats.map((c, i) => `<span class="t${i}" style="flex-grow:${c.total}"></span>`).join('')}</div>
+      <ul class="cat-legend">${cats.map((c, i) => `<li><i class="dot t${i}" aria-hidden="true"></i><span>${esc(c.name)}</span><b>${esc(shortMoney(c.total))}</b></li>`).join('')}</ul>
+    </section>`
+        : ''
+    }
+    ${
+      days.length
+        ? days
+            .map(
+              (d) => `<section class="day">
+      <div class="day-head"><span>${esc(cap(dayLabel(d.day)))}${d.day === today ? ' · hoy' : d.day === yesterday ? ' · ayer' : ''}</span><b>${esc(formatMoney(d.total))}</b></div>
+      <ul class="day-list">${d.purchases
+        .map((p) => {
+          const title = p.placeName || p.category || 'Sin especificar';
+          const t = tone.get((p.category || 'Sin categoría').toLowerCase()) ?? 4;
+          return `<li><button type="button" class="purchase-row" data-id="${esc(p.id)}">
+          <span class="avatar t${t}" aria-hidden="true">${esc((p.category || title).charAt(0).toUpperCase())}</span>
+          <span class="pr-main"><span class="row-title">${esc(title)}</span>
+          <span class="row-sub">${esc([p.placeName ? p.category || 'Sin categoría' : '', p.start ? hhmm(p.start) : '', plural(p.items.length, 'artículo', 'artículos'), p.auto ? 'guardada sola' : ''].filter(Boolean).join(' · '))}</span></span>
+          <span class="row-amount">${esc(formatMoney(p.total))}</span>
+        </button></li>`;
+        })
+        .join('')}</ul>
+    </section>`,
+            )
+            .join('')
+        : `<div class="hist-empty"><p><strong>No hay compras guardadas en ${esc(monthName(mk))}.</strong></p><p>Cuando tocás «Guardar compra», la compra aparece acá con su fecha.</p></div>`
+    }`;
+  $('#g-mprev').onclick = () => {
+    gv = { ...gv, month: prevMonthKey(mk), year: Number(prevMonthKey(mk).slice(0, 4)) };
+    renderGastos();
+  };
+  $('#g-mnext').onclick = () => {
+    gv = { ...gv, month: nextMonthKey(mk), year: Number(nextMonthKey(mk).slice(0, 4)) };
+    renderGastos();
+  };
+  $('#g-myear').onclick = () => {
+    gv = { ...gv, mode: 'year', year: Number(mk.slice(0, 4)) };
+    renderGastos();
+  };
   for (const b of gBody.querySelectorAll('.purchase-row')) b.onclick = () => {
     gv = { ...gv, mode: 'purchase', id: b.dataset.id };
     renderGastos();
   };
-  const ex = $('#g-export');
-  if (ex) ex.onclick = () => exportMonth(mk);
 }
 
 function renderPurchase() {
   const p = ledger.purchases.find((x) => x.id === gv.id);
   $('#gastos-back').hidden = false;
   $('#gastos-title').textContent = `Compra del ${dayLabel(p.day)}`;
-  const units = p.items.reduce((sum, it) => sum + it.qty, 0);
   gBody.innerHTML = `
+    <p class="detail-kicker">${esc([p.placeName || p.category, timeRange(p)].filter(Boolean).join(' · ') || plural(p.items.length, 'artículo', 'artículos'))}</p>
     <div class="big-total">${esc(formatMoney(p.total))}</div>
-    <p class="sub-line">${esc([timeRange(p), plural(p.items.length, 'artículo', 'artículos'), plural(units, 'unidad', 'unidades')].filter(Boolean).join(' · '))}</p>
-    <label class="field">
-      <span class="field-label">Fecha</span>
-      <input id="g-day" class="input" type="date" required max="${dayKey(Date.now())}" value="${esc(p.day)}" />
-    </label>
-    <label class="field">
-      <span class="field-label">Lugar</span>
-      <input id="g-place-name" class="input" type="text" list="known-places" autocomplete="off" autocapitalize="words" maxlength="60" placeholder="Ej.: Coto Palermo" value="${esc(p.placeName)}" />
-    </label>
-    <h3 class="section-title">Tipo de gasto</h3>
-    <div class="chips place-chips" id="g-places" role="radiogroup" aria-label="Tipo de gasto">${placeChips(p.place)}</div>
-    <h3 class="section-title">Artículos <span class="muted">· tocá el precio para corregirlo</span></h3>
-    <ul class="p-items editable" id="g-items">${p.items
+    <div class="card inset">
+      <label class="inset-row">${ICON_CAL}<span class="ir-label">Fecha</span><input id="g-day" class="ir-input" type="date" required max="${dayKey(Date.now())}" value="${esc(p.day)}" /></label>
+      <label class="inset-row">${ICON_PIN}<span class="ir-label">Lugar</span><input id="g-place-name" class="ir-input" type="text" list="known-places" autocomplete="off" autocapitalize="words" maxlength="60" placeholder="Agregar" value="${esc(p.placeName)}" /></label>
+      <label class="inset-row">${ICON_CAT}<span class="ir-label">Categoría</span><input id="g-category" class="ir-input" type="text" list="known-cats" autocomplete="off" autocapitalize="sentences" maxlength="40" placeholder="Elegir o escribir" value="${esc(p.category)}" /></label>
+    </div>
+    <div class="list-head">
+      <h2>Artículos <span class="count">${p.items.length}</span></h2>
+      <button type="button" class="text-btn strong" id="g-add-item">${ICON_PLUS}Agregar</button>
+    </div>
+    <form class="card add-item" id="g-add-form" hidden novalidate>
+      <input id="g-add-name" class="input" type="text" autocomplete="off" autocapitalize="sentences" maxlength="120" placeholder="Nombre (opcional)" aria-label="Nombre del artículo" />
+      <div class="add-row">
+        <div class="price-input small"><span aria-hidden="true">$</span><input id="g-add-price" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-label="Precio del artículo" /></div>
+        <button type="submit" class="btn primary">Agregar</button>
+      </div>
+    </form>
+    <ul class="card p-items editable" id="g-items">${p.items
       .map((it, i) => {
         const name = it.name ? esc(it.name) : 'Artículo sin nombre';
-        const last = p.items.length === 1 && it.qty === 1;
+        const single = p.items.length === 1;
+        const trash = it.qty === 1 && !single;
         return `<li data-i="${i}">
         <span class="n">${name}</span><span class="s">${esc(formatMoney(it.cents * it.qty))}</span>
-        <label class="pi-price"><span aria-hidden="true">$</span><input type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" value="${esc(centsToInput(it.cents))}" aria-label="Precio unitario de ${name}" /></label>
+        <label class="pi-price"><span aria-hidden="true">$</span><input type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" value="${esc(centsToInput(it.cents))}" aria-label="Precio unitario de ${name}" />${ICON_PEN}</label>
         <div class="stepper">
-          <button type="button" class="step" data-act="minus" aria-label="${it.qty > 1 ? 'Restar uno' : `Quitar ${name}`}" ${last ? 'disabled' : ''}>−</button>
+          <button type="button" class="step" data-act="minus" aria-label="${it.qty > 1 ? 'Restar uno' : `Quitar ${name}`}" ${single && it.qty === 1 ? 'disabled' : ''}>${trash ? ICON_TRASH : '−'}</button>
           <output>${it.qty}</output>
           <button type="button" class="step" data-act="plus" aria-label="Sumar uno">+</button>
         </div>
       </li>`;
       })
       .join('')}</ul>
-    <div class="danger-zone"><button type="button" class="btn danger-ghost" id="g-del">Borrar compra</button></div>`;
+    <p class="small-note center">Los cambios se guardan solos.</p>
+    <div class="danger-zone"><button type="button" class="btn danger-ghost" id="g-del">${ICON_TRASH}Borrar compra</button></div>`;
   fillKnownPlaces();
+  const current = () => ledger.purchases.find((x) => x.id === p.id);
+
   $('#g-day').addEventListener('change', (e) => {
     const day = e.target.value;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > dayKey(Date.now())) {
@@ -1890,8 +2040,47 @@ function renderPurchase() {
     afterLedgerEdit();
     toast(`Pasamos la compra al ${dayLabel(day)}`);
   });
+
+  const nameInput = $('#g-place-name');
+  const saveName = () => {
+    const cur = current();
+    if (!cur || cur.placeName === nameInput.value.replace(/\s+/g, ' ').trim()) return;
+    ledger = setPlaceName(ledger, p.id, nameInput.value);
+    // Un lugar ya usado trae su categoría si la compra no tenía
+    const c = categoryFor(ledger, nameInput.value);
+    if (c && !cur.category) ledger = setCategory(ledger, p.id, c);
+    afterLedgerEdit();
+  };
+  nameInput.addEventListener('change', saveName);
+  const catInput = $('#g-category');
+  catInput.addEventListener('change', () => {
+    const cur = current();
+    if (!cur || cur.category === cleanCategory(catInput.value)) return;
+    ledger = setCategory(ledger, p.id, catInput.value);
+    afterLedgerEdit();
+  });
+  for (const input of [nameInput, catInput]) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur();
+    });
+  }
+
+  const addForm = $('#g-add-form');
+  $('#g-add-item').onclick = () => {
+    addForm.hidden = !addForm.hidden;
+    if (!addForm.hidden) $('#g-add-price').focus();
+  };
+  addForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const cents = parseMoneyInput($('#g-add-price').value);
+    if (!cents) return $('#g-add-price').focus();
+    const name = $('#g-add-name').value;
+    ledger = addPurchaseItem(ledger, p.id, { name, cents, qty: 1 });
+    afterLedgerEdit();
+    toast(`Agregamos «${name.trim() || 'Artículo sin nombre'}» a la compra`);
+  });
+
   const itemsEl = $('#g-items');
-  const current = () => ledger.purchases.find((x) => x.id === p.id);
   itemsEl.addEventListener('change', (e) => {
     const input = e.target.closest('.pi-price input');
     if (!input) return;
@@ -1934,53 +2123,18 @@ function renderPurchase() {
       },
     });
   });
-  const nameInput = $('#g-place-name');
-  const saveName = () => {
-    const cur = ledger.purchases.find((x) => x.id === p.id);
-    if (!cur || cur.placeName === nameInput.value.replace(/\s+/g, ' ').trim()) return;
-    ledger = setPlaceName(ledger, p.id, nameInput.value);
-    // Si el lugar ya se usó antes y la compra no tiene tipo, se lo ponemos
-    const t = placeTypeFor(ledger, nameInput.value);
-    if (t && !cur.place) ledger = setPlace(ledger, p.id, t);
-    saveLedger();
-    const chips = $('#g-places');
-    if (chips) chips.innerHTML = placeChips(ledger.purchases.find((x) => x.id === p.id).place);
-  };
-  nameInput.addEventListener('change', saveName);
-  nameInput.addEventListener('blur', saveName);
-  nameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') nameInput.blur();
-  });
-  $('#g-places').onclick = (e) => {
-    const b = e.target.closest('[data-place]');
-    if (!b) return;
-    saveName();
-    const cur = ledger.purchases.find((x) => x.id === p.id);
-    ledger = setPlace(ledger, p.id, cur.place === b.dataset.place ? '' : b.dataset.place);
-    saveLedger();
-    renderGastos();
-  };
+
   $('#g-del').onclick = () => {
     const before = ledger;
     ledger = deletePurchase(ledger, p.id);
-    saveLedger();
     gv = { ...gv, mode: 'month', id: null };
-    renderGastos();
-    renderCloseCard();
-    render();
-    wasOver = overFlags(budget());
+    afterLedgerEdit();
     toast(`Borraste la compra de ${formatMoney(p.total)}`, {
       action: 'Deshacer',
       onAction: () => {
         ledger = before;
-        saveLedger();
-        renderCloseCard();
-        render();
-        wasOver = overFlags(budget());
-        if (sheetGastos.open) {
-          gv = { ...gv, mode: 'purchase', id: p.id };
-          renderGastos();
-        }
+        if (sheetGastos.open) gv = { ...gv, mode: 'purchase', id: p.id };
+        afterLedgerEdit();
       },
     });
   };
@@ -2049,8 +2203,7 @@ function reloadState() {
   wasOver = overFlags(budget());
   render();
   renderCloseCard();
-  if (el.sheetHistory.open) renderHistory();
-  if (sheetGastos.open) renderGastos();
+  if (sheetGastos.open) renderGastosScreen();
   if (sheetRecap.open) renderRecap();
 }
 window.addEventListener('pageshow', (e) => {

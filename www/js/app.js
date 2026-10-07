@@ -21,6 +21,10 @@ import {
   monthTotals,
   isClosed,
   deletePurchase,
+  setPurchaseDay,
+  setPurchaseItem,
+  removePurchaseItem,
+  monthDays,
   setPlace,
   setPlaceName,
   knownPlaces,
@@ -308,10 +312,28 @@ function render() {
     el.limitPeriod.innerHTML = lines.map((l) => `<span${l.bad ? ' class="bad"' : ''}>${esc(l.text)}</span>`).join('');
   }
   renderCamTotal();
+  renderSaved();
 
   el.empty.hidden = list.items.length > 0;
   el.listHead.hidden = list.items.length === 0;
   el.list.innerHTML = list.items.map(itemHTML).join('');
+}
+
+// Lo ya guardado en Gastos (sin el carrito): para ver de un vistazo si una compra ya se cargó.
+function renderSaved() {
+  const now = Date.now();
+  const mk = monthKey(now);
+  const today = dayKey(now);
+  const m = monthTotals(ledger, mk);
+  const todayCents = m.purchases.filter((p) => p.day === today).reduce((s, p) => s + p.total, 0);
+  const saved = $('#saved-line');
+  saved.hidden = !m.count;
+  if (!m.count) return;
+  const month = monthLabel(mk).split(' ')[0];
+  saved.innerHTML = `<span class="sl-stat"><span>Guardado hoy</span><b>${esc(shortMoney(todayCents))}</b></span>
+    <span class="sl-stat"><span>En ${esc(month)}</span><b>${esc(shortMoney(m.total))}</b></span>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>`;
+  saved.setAttribute('aria-label', `Ya guardado: hoy ${formatMoney(todayCents)}, en ${month} ${formatMoney(m.total)}. Ver gastos del mes`);
 }
 
 const shortMoney = (c) => formatMoney(c).replace(/,00$/, '');
@@ -1669,6 +1691,10 @@ const gBody = $('#gastos-body');
 let gv = { mode: 'year', year: new Date().getFullYear(), month: null, id: null };
 
 $('#btn-gastos').addEventListener('click', () => openGastos());
+$('#saved-line').addEventListener('click', () => {
+  const mk = monthKey(Date.now());
+  openGastos({ mode: 'month', year: Number(mk.slice(0, 4)), month: mk, id: null });
+});
 $('#gastos-back').addEventListener('click', () => {
   if (gv.mode === 'purchase') gv = { ...gv, mode: 'month', id: null };
   else gv = { ...gv, mode: 'year', month: null };
@@ -1793,16 +1819,21 @@ function renderMonth() {
           `<li><span>${esc(PLACE_LABEL[id] || 'Sin especificar')}</span><b>${esc(formatMoney(c))}</b><span class="track"><span class="fill" style="width:${((c / maxPlace) * 100).toFixed(1)}%"></span></span></li>`,
       )
       .join('')}</ul>` : ''}
-    <h3 class="section-title">Compras</h3>
-    ${t.purchases.length ? `<ul class="prods">${t.purchases
+    <h3 class="section-title">Por día</h3>
+    ${t.purchases.length ? monthDays(ledger, mk)
       .map(
-        (p) => `<li><button type="button" class="purchase-row" data-id="${esc(p.id)}">
-        <span class="row-title">${esc(dayLabel(p.day))} · ${esc(p.placeName || PLACE_LABEL[p.place] || 'Sin especificar')}</span>
+        (d) => `<div class="day-head"><span>${esc(cap(dayLabel(d.day)))}</span><b>${esc(formatMoney(d.total))}</b></div>
+        <ul class="prods">${d.purchases
+          .map(
+            (p) => `<li><button type="button" class="purchase-row" data-id="${esc(p.id)}">
+        <span class="row-title">${esc(p.placeName || PLACE_LABEL[p.place] || 'Sin especificar')}</span>
         <span class="row-amount">${esc(formatMoney(p.total))}</span>
         <span class="row-sub">${esc([p.placeName ? PLACE_LABEL[p.place] || 'Sin tipo' : '', timeRange(p), plural(p.items.length, 'artículo', 'artículos'), p.auto ? 'guardada sola' : ''].filter(Boolean).join(' · '))}</span>
       </button></li>`,
+          )
+          .join('')}</ul>`,
       )
-      .join('')}</ul>` : '<p class="muted">No hay compras guardadas este mes.</p>'}`;
+      .join('') : '<p class="muted">No hay compras guardadas este mes.</p>'}`;
   for (const b of gBody.querySelectorAll('.purchase-row')) b.onclick = () => {
     gv = { ...gv, mode: 'purchase', id: b.dataset.id };
     renderGastos();
@@ -1818,21 +1849,91 @@ function renderPurchase() {
   const units = p.items.reduce((sum, it) => sum + it.qty, 0);
   gBody.innerHTML = `
     <div class="big-total">${esc(formatMoney(p.total))}</div>
-    <p class="sub-line">${esc([cap(dayLabel(p.day)) + ' ' + p.day.slice(0, 4), timeRange(p), plural(p.items.length, 'artículo', 'artículos'), plural(units, 'unidad', 'unidades')].filter(Boolean).join(' · '))}</p>
+    <p class="sub-line">${esc([timeRange(p), plural(p.items.length, 'artículo', 'artículos'), plural(units, 'unidad', 'unidades')].filter(Boolean).join(' · '))}</p>
+    <label class="field">
+      <span class="field-label">Fecha</span>
+      <input id="g-day" class="input" type="date" required max="${dayKey(Date.now())}" value="${esc(p.day)}" />
+    </label>
     <label class="field">
       <span class="field-label">Lugar</span>
       <input id="g-place-name" class="input" type="text" list="known-places" autocomplete="off" autocapitalize="words" maxlength="60" placeholder="Ej.: Coto Palermo" value="${esc(p.placeName)}" />
     </label>
     <h3 class="section-title">Tipo de gasto</h3>
     <div class="chips place-chips" id="g-places" role="radiogroup" aria-label="Tipo de gasto">${placeChips(p.place)}</div>
-    <h3 class="section-title">Artículos</h3>
-    <ul class="p-items">${p.items
-      .map(
-        (it) => `<li><span class="n">${it.name ? esc(it.name) : 'Artículo sin nombre'}</span><span class="q">${it.qty} × ${esc(formatMoney(it.cents))}</span><span class="s">${esc(formatMoney(it.cents * it.qty))}</span></li>`,
-      )
+    <h3 class="section-title">Artículos <span class="muted">· tocá el precio para corregirlo</span></h3>
+    <ul class="p-items editable" id="g-items">${p.items
+      .map((it, i) => {
+        const name = it.name ? esc(it.name) : 'Artículo sin nombre';
+        const last = p.items.length === 1 && it.qty === 1;
+        return `<li data-i="${i}">
+        <span class="n">${name}</span><span class="s">${esc(formatMoney(it.cents * it.qty))}</span>
+        <label class="pi-price"><span aria-hidden="true">$</span><input type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" value="${esc(centsToInput(it.cents))}" aria-label="Precio unitario de ${name}" /></label>
+        <div class="stepper">
+          <button type="button" class="step" data-act="minus" aria-label="${it.qty > 1 ? 'Restar uno' : `Quitar ${name}`}" ${last ? 'disabled' : ''}>−</button>
+          <output>${it.qty}</output>
+          <button type="button" class="step" data-act="plus" aria-label="Sumar uno">+</button>
+        </div>
+      </li>`;
+      })
       .join('')}</ul>
     <div class="danger-zone"><button type="button" class="btn danger-ghost" id="g-del">Borrar compra</button></div>`;
   fillKnownPlaces();
+  $('#g-day').addEventListener('change', (e) => {
+    const day = e.target.value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > dayKey(Date.now())) {
+      e.target.value = p.day;
+      return;
+    }
+    if (day === p.day) return;
+    ledger = setPurchaseDay(ledger, p.id, day);
+    gv = { ...gv, year: Number(day.slice(0, 4)), month: day.slice(0, 7) };
+    afterLedgerEdit();
+    toast(`Pasamos la compra al ${dayLabel(day)}`);
+  });
+  const itemsEl = $('#g-items');
+  const current = () => ledger.purchases.find((x) => x.id === p.id);
+  itemsEl.addEventListener('change', (e) => {
+    const input = e.target.closest('.pi-price input');
+    if (!input) return;
+    const i = Number(input.closest('li').dataset.i);
+    const it = current()?.items[i];
+    if (!it) return;
+    const cents = parseMoneyInput(input.value);
+    if (!cents) {
+      input.value = centsToInput(it.cents);
+      return;
+    }
+    if (cents === it.cents) return;
+    ledger = setPurchaseItem(ledger, p.id, i, { cents });
+    afterLedgerEdit();
+  });
+  itemsEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.matches('input')) e.target.blur();
+  });
+  itemsEl.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const i = Number(b.closest('li').dataset.i);
+    const cur = current();
+    const it = cur?.items[i];
+    if (!it) return;
+    if (b.dataset.act === 'plus' || it.qty > 1) {
+      ledger = setPurchaseItem(ledger, p.id, i, { qty: it.qty + (b.dataset.act === 'plus' ? 1 : -1) });
+      afterLedgerEdit();
+      return;
+    }
+    if (cur.items.length < 2) return;
+    const before = ledger;
+    ledger = removePurchaseItem(ledger, p.id, i);
+    afterLedgerEdit();
+    toast(`Quitaste «${it.name || 'Artículo sin nombre'}» de la compra`, {
+      action: 'Deshacer',
+      onAction: () => {
+        ledger = before;
+        afterLedgerEdit();
+      },
+    });
+  });
   const nameInput = $('#g-place-name');
   const saveName = () => {
     const cur = ledger.purchases.find((x) => x.id === p.id);
@@ -1883,6 +1984,18 @@ function renderPurchase() {
       },
     });
   };
+}
+
+// Después de corregir una compra guardada: totales, límite y la pantalla de Gastos sin perder el scroll.
+function afterLedgerEdit() {
+  saveLedger();
+  renderCloseCard();
+  render();
+  wasOver = overFlags(budget());
+  if (!sheetGastos.open) return;
+  const top = gBody.scrollTop;
+  renderGastos();
+  gBody.scrollTop = top;
 }
 
 // Exportar el mes como CSV: en el APK abre «Compartir» de Android (para mandarlo a otra app);
@@ -1959,6 +2072,7 @@ setInterval(() => {
 }, 60_000);
 
 const isNative = !!window.Capacitor?.isNativePlatform?.();
+document.documentElement.classList.toggle('native', isNative);
 if ('serviceWorker' in navigator) {
   if (isNative) {
     // Dentro del APK los archivos ya son locales: no usamos service worker.

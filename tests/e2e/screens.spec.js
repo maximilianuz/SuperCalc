@@ -149,6 +149,27 @@ test('a 360 px los textos de la barra inferior y los avisos entran completos', a
   expect(chip.x + chip.width).toBeLessThanOrEqual(card.x + card.width);
 });
 
+test('APK con barra de estado: la barra superior queda visible y no se suman los márgenes dos veces', async ({ page, context }) => {
+  await page.setViewportSize({ width: 360, height: 722 });
+  await openOffline(page, context);
+  await page.evaluate(() => {
+    document.documentElement.classList.add('native');
+    document.documentElement.style.setProperty('--safe-area-inset-top', '28px');
+  });
+  const top = await page.locator('.app').evaluate((e) => parseFloat(getComputedStyle(e).paddingTop));
+  expect(top).toBe(36);
+  for (const id of ['#btn-gastos', '#btn-history']) {
+    const hit = await page.locator(id).evaluate((b) => {
+      const r = b.getBoundingClientRect();
+      return b.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+    });
+    expect(hit, `${id} tapado`).toBe(true);
+  }
+  // WebView vieja: Capacitor ya separa la app de las barras e informa 0
+  await page.evaluate(() => document.documentElement.style.setProperty('--safe-area-inset-top', '0px'));
+  expect(await page.locator('.app').evaluate((e) => parseFloat(getComputedStyle(e).paddingTop))).toBe(8);
+});
+
 test('prefers-reduced-motion anula las animaciones de las hojas', async ({ page, context }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await openOffline(page, context);

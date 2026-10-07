@@ -39,6 +39,8 @@ Repetí los pasos 1, 2 y 4. Todos los APK se firman con la misma clave (`signing
 ## Qué hace
 - Lista con nombre opcional, precio y cantidad (− / +). Arriba, fijo: el total o, si pusiste un límite,
   **cuánto te queda hoy** en grande (el carrito queda abajo).
+- **Ya guardado**: debajo del total, lo que ya guardaste en Gastos hoy y en el mes (sin el carrito), para ver de un
+  vistazo si una compra ya se cargó. Al tocarlo abre los gastos del mes.
   Mismo nombre (o código) y mismo precio → suma cantidad. Quitar con «Deshacer». «Vaciar» con confirmación.
 - Límite de gasto **por día, por semana o por mes**, con barra y marca; avisa (vibración + aviso) al pasarte
   y sigue sumando. Cuenta lo que ya guardaste en Gastos más el carrito: terminar una compra no lo reinicia.
@@ -66,8 +68,10 @@ Repetí los pasos 1, 2 y 4. Todos los APK se firman con la misma clave (`signing
 - **Cierre mensual**: al cambiar el mes, el anterior se cierra y aparece un aviso. **Ver resumen** abre el cierre:
   total, variación contra el mes previo, promedio por compra, gasto por lugar, el producto que más subió y
   **Exportar CSV**.
-- **Gastos (historial anual)**: total del año, promedio por mes, barras por mes, detalle de cada mes por lugar
-  y por compra (artículos, cambiar el lugar, borrar con «Deshacer»).
+- **Gastos (historial anual)**: total del año, promedio por mes, barras por mes y, en cada mes, las compras
+  **agrupadas por día con el total de cada día**. En una compra se puede corregir la **fecha** (conserva la hora;
+  sirve también para cargar una compra de otro día), el lugar, el **precio y la cantidad** de cada artículo,
+  quitar un artículo o borrar la compra (con «Deshacer»).
 
 ## Exportar el mes (para otra app de gastos)
 En **Gastos → mes → «Exportar … (CSV)»** (o en el resumen de cierre de mes → «Exportar CSV»).

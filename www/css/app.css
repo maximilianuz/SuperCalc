@@ -43,14 +43,23 @@
   --r-xl: 28px;
   --gutter: 20px;
 
-  --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
-  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
-  --safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
-  --safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
   --bar-h: 84px;
 
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --dur: 220ms;
+}
+
+/* En el APK, Capacitor informa los márgenes reales (0 cuando la WebView ya queda entre las barras del sistema);
+   env() en WebView < 140 los informa igual y se sumaban dos veces. */
+html.native {
+  --safe-top: var(--safe-area-inset-top, 0px);
+  --safe-bottom: var(--safe-area-inset-bottom, 0px);
+  --safe-left: var(--safe-area-inset-left, 0px);
+  --safe-right: var(--safe-area-inset-right, 0px);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -225,7 +234,8 @@ svg {
 }
 
 /* Tapa la franja de arriba para que la lista no se vea pasar por encima de la tarjeta fija */
-.total-card::before {
+/* Solo pegada arriba: suelta taparía la barra superior cuando hay barra de estado */
+.total-card.stuck::before {
   content: '';
   position: absolute;
   left: -2px;
@@ -2525,4 +2535,119 @@ dialog .toast-host {
   background: transparent;
   color: var(--text);
   border-color: var(--line-strong);
+}
+
+/* ---------- Ya guardado (pantalla principal) ---------- */
+.saved-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 56px;
+  margin: 12px 0 0;
+  padding: 8px 10px 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: none;
+  text-align: left;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.saved-line .sl-stat {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+
+.saved-line b {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-line svg {
+  width: 18px;
+  height: 18px;
+}
+
+.saved-line:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* ---------- Gastos: días y edición de compras ---------- */
+.day-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line-strong);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.day-head b {
+  font-variant-numeric: tabular-nums;
+}
+
+.section-title .muted {
+  font-weight: 400;
+}
+
+.p-items.editable li {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.p-items.editable .s {
+  grid-row: 1;
+  grid-column: 2;
+  justify-self: end;
+}
+
+.pi-price {
+  position: relative;
+  display: block;
+  max-width: 170px;
+}
+
+.pi-price span {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.pi-price input {
+  width: 100%;
+  height: 44px;
+  padding: 0 10px 0 28px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.pi-price input:focus {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.p-items.editable .step:disabled {
+  opacity: 0.3;
+  cursor: default;
 }

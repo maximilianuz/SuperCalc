@@ -164,3 +164,37 @@ test('gasto del mes por lugar: agrupa sin importar mayúsculas y usa el tipo si 
     [['coto palermo', 150000, 2], ['kiosco', 9000, 1], ['sin especificar', 7000, 1]],
   );
 });
+
+test('corregir una compra guardada: fecha con su hora, precio, cantidad y quitar artículo', async () => {
+  const { setPurchaseDay, setPurchaseItem, removePurchaseItem, monthDays } = await import('../../www/js/ledger.js');
+  const base = archiveItems(emptyLedger(), [item('Yerba', 400000, 1, at([10, 6], 9, 30)), item('Leche', 110000, 2, at([10, 6], 9, 35))]).ledger;
+  const id = base.purchases[0].id;
+  assert.equal(base.purchases[0].total, 620000);
+
+  const moved = setPurchaseDay(base, id, '2026-10-02');
+  const p = moved.purchases[0];
+  assert.equal(p.day, '2026-10-02');
+  assert.equal(dayKey(p.start), '2026-10-02');
+  assert.equal(new Date(p.start).getHours(), 9);
+  assert.equal(new Date(p.end).getMinutes(), 35);
+  assert.equal(base.purchases[0].day, '2026-10-06', 'no modifica el original');
+  assert.equal(setPurchaseDay(base, id, '2026-13-40').purchases[0].day, '2026-10-06');
+
+  const priced = setPurchaseItem(base, id, 0, { cents: 450000 });
+  assert.equal(priced.purchases[0].total, 670000);
+  const more = setPurchaseItem(priced, id, 1, { qty: 3 });
+  assert.equal(more.purchases[0].total, 780000);
+  assert.equal(setPurchaseItem(base, id, 0, { cents: 0, qty: -1 }).purchases[0].total, 620000, 'ignora valores inválidos');
+
+  const one = removePurchaseItem(base, id, 0);
+  assert.deepEqual(one.purchases[0].items.map((it) => it.name), ['Leche']);
+  assert.equal(one.purchases[0].total, 220000);
+  assert.equal(removePurchaseItem(one, id, 0).purchases[0].items.length, 1, 'la compra conserva al menos un artículo');
+
+  const two = archiveItems(moved, [item('Pan', 150000, 1, at([10, 2], 18))]).ledger;
+  const days = monthDays(two, '2026-10');
+  assert.equal(days.length, 1);
+  assert.equal(days[0].day, '2026-10-02');
+  assert.equal(days[0].total, 770000);
+  assert.equal(days[0].purchases.length, 2);
+});

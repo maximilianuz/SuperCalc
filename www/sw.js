@@ -1,6 +1,6 @@
 // Service worker: precachea todo para que la app funcione sin internet.
 // Dentro del APK (Capacitor) no se registra.
-const VERSION = 'compras-v5';
+const VERSION = 'compras-v6';
 const ASSETS = [
   './',
   'index.html',

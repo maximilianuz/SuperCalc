@@ -164,7 +164,8 @@ test('historial anual: barras por mes, total, promedio, años y borrar compra', 
   await g.locator('.month-row', { hasText: 'marzo' }).click();
   await expect(g.locator('.place-bars li')).toHaveCount(2);
   await g.locator('.purchase-row', { hasText: 'Kiosco' }).click();
-  await expect(g.locator('.p-items li')).toContainText('2 × $ 1.000,00');
+  await expect(g.locator('.p-items li output')).toHaveText('2');
+  await expect(g.locator('.p-items li .s')).toHaveText('$ 2.000,00');
   await g.getByRole('button', { name: 'Borrar compra' }).click();
   await expect(g.locator('.purchase-row')).toHaveCount(1);
   await g.locator('.toast-host').getByRole('button', { name: 'Deshacer' }).click();
@@ -195,7 +196,8 @@ test('lugar escrito a mano, editable, con tipo recordado y exportación CSV del 
   await page.click('#btn-gastos');
   const g = page.locator('#sheet-gastos');
   await g.locator('.month-row', { hasText: 'septiembre' }).click();
-  await expect(g.locator('.purchase-row').first()).toContainText('dom 13 sept · coto palermo');
+  await expect(g.locator('.day-head').first()).toContainText('Dom 13 sept');
+  await expect(g.locator('.purchase-row').first()).toContainText('coto palermo');
   await g.locator('.purchase-row').first().click();
   await page.fill('#g-place-name', 'Día Belgrano');
   await page.press('#g-place-name', 'Enter');
@@ -290,4 +292,63 @@ test('resumen del mes: gasto por lugar y el producto que más subió', async ({ 
   const dl = page.waitForEvent('download');
   await r.getByRole('button', { name: 'Exportar CSV' }).click();
   expect((await dl).suggestedFilename()).toBe('compras-2026-09.csv');
+});
+
+test('«Ya guardado» en la pantalla principal y corregir una compra de otro día', async ({ page, context }) => {
+  const seed = {
+    v: 1,
+    purchases: [
+      { id: 'a', day: '2026-10-04', start: at('2026-10-04T18:20:00'), end: at('2026-10-04T18:25:00'), place: 'super', items: [{ name: 'Pan', code: '', cents: 150000, qty: 2 }, { name: 'Huevos', code: '', cents: 250000, qty: 1 }] },
+      { id: 'b', day: '2026-10-06', start: at('2026-10-06T09:00:00'), end: at('2026-10-06T09:00:00'), place: 'kiosco', items: [{ name: 'Leche', code: '', cents: 110000, qty: 1 }] },
+    ],
+    closes: [],
+  };
+  await page.clock.setFixedTime(at('2026-10-06T12:00:00'));
+  await page.addInitScript((seed) => {
+    if (!sessionStorage.getItem('s')) {
+      localStorage.setItem('compras.gastos.v1', JSON.stringify(seed));
+      sessionStorage.setItem('s', '1');
+    }
+  }, seed);
+  await openOffline(page, context);
+  const saved = page.locator('#saved-line');
+  await expect(saved.locator('b')).toHaveText(['$ 1.100', '$ 6.600']);
+  await expect(saved).toHaveAttribute('aria-label', /hoy \$ 1\.100,00, en octubre \$ 6\.600,00/);
+  // El carrito no cuenta como guardado
+  await addManual(page, { name: 'Café', price: '9000' });
+  await expect(saved).toHaveAttribute('aria-label', /hoy \$ 1\.100,00, en octubre \$ 6\.600,00/);
+
+  await saved.click();
+  const g = page.locator('#sheet-gastos');
+  await expect(page.locator('#gastos-title')).toHaveText('Octubre 2026');
+  await expect(g.locator('.day-head')).toHaveText([/Mar 6 oct\s*\$ 1\.100,00/, /Dom 4 oct\s*\$ 5\.500,00/]);
+
+  await g.locator('.purchase-row', { hasText: 'Supermercado' }).click();
+  const pan = g.locator('#g-items li', { hasText: 'Pan' });
+  await pan.locator('input').fill('1600');
+  await pan.locator('input').press('Enter');
+  await expect(g.locator('.big-total')).toHaveText('$ 5.700,00');
+  await g.locator('#g-items li', { hasText: 'Pan' }).getByRole('button', { name: 'Sumar uno' }).click();
+  await expect(g.locator('.big-total')).toHaveText('$ 7.300,00');
+
+  await g.locator('#g-items li', { hasText: 'Huevos' }).getByRole('button', { name: 'Quitar Huevos' }).click();
+  await expect(g.locator('#g-items li')).toHaveCount(1);
+  await expect(g.locator('.big-total')).toHaveText('$ 4.800,00');
+  await g.locator('.toast-host').getByRole('button', { name: 'Deshacer' }).click();
+  await expect(g.locator('#g-items li')).toHaveCount(2);
+  await expect(g.locator('.big-total')).toHaveText('$ 7.300,00');
+
+  // Fecha: no acepta días futuros; al cambiarla, la compra pasa a ese día con su hora
+  await page.fill('#g-day', '2026-10-09');
+  await expect(page.locator('#g-day')).toHaveValue('2026-10-04');
+  await page.fill('#g-day', '2026-10-05');
+  await expect(page.locator('#gastos-title')).toHaveText('Compra del lun 5 oct');
+  await expect(g).toContainText('18:20–18:25');
+  await page.click('#gastos-back');
+  await expect(g.locator('.day-head')).toHaveText([/Mar 6 oct/, /Lun 5 oct\s*\$ 7\.300,00/]);
+  await page.locator('#sheet-gastos [data-close]').click();
+  await expect(saved).toHaveAttribute('aria-label', /hoy \$ 1\.100,00, en octubre \$ 8\.400,00/);
+
+  await reloadSettled(page);
+  await expect(saved.locator('b')).toHaveText(['$ 1.100', '$ 8.400']);
 });

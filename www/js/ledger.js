@@ -223,6 +223,63 @@ export function deletePurchase(ledger, id) {
   return next;
 }
 
+function retotal(p) {
+  p.total = p.items.reduce((s, it) => s + it.cents * it.qty, 0);
+}
+
+// Cambia el día de una compra conservando la hora (para corregir o cargar una compra de otro día).
+export function setPurchaseDay(ledger, id, day) {
+  const next = clone(ledger);
+  const p = next.purchases.find((x) => x.id === id);
+  if (!p || !isDay(day) || p.day === day) return next;
+  const [y, m, d] = day.split('-').map(Number);
+  if (dayKey(new Date(y, m - 1, d)) !== day) return next;
+  const move = (t) => {
+    if (!t) return t;
+    const x = new Date(t);
+    x.setFullYear(y, m - 1, d);
+    return x.getTime();
+  };
+  p.start = move(p.start);
+  p.end = move(p.end);
+  p.day = day;
+  sortPurchases(next.purchases);
+  return next;
+}
+
+export function setPurchaseItem(ledger, id, index, { cents, qty }) {
+  const next = clone(ledger);
+  const p = next.purchases.find((x) => x.id === id);
+  const it = p?.items[index];
+  if (!it) return next;
+  if (Number.isSafeInteger(cents) && cents > 0) it.cents = cents;
+  if (Number.isSafeInteger(qty) && qty > 0) it.qty = Math.min(qty, 9999);
+  retotal(p);
+  return next;
+}
+
+// Una compra conserva al menos un artículo: para quitarla entera está deletePurchase.
+export function removePurchaseItem(ledger, id, index) {
+  const next = clone(ledger);
+  const p = next.purchases.find((x) => x.id === id);
+  if (!p || p.items.length < 2 || !p.items[index]) return next;
+  p.items.splice(index, 1);
+  retotal(p);
+  return next;
+}
+
+// Compras del mes agrupadas por día (más reciente primero), con el total de cada día.
+export function monthDays(ledger, mk) {
+  const days = [];
+  for (const p of monthTotals(ledger, mk).purchases) {
+    let d = days[days.length - 1];
+    if (!d || d.day !== p.day) days.push((d = { day: p.day, total: 0, purchases: [] }));
+    d.total += p.total;
+    d.purchases.push(p);
+  }
+  return days;
+}
+
 export function setPlace(ledger, id, place) {
   const next = clone(ledger);
   const p = next.purchases.find((x) => x.id === id);
